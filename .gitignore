@@ -11,5 +11,6 @@
 
 # nvim
 !.config/
+!.config/nvim/
 !.config/nvim/**/*
 
