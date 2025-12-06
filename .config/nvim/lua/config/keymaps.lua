@@ -8,5 +8,6 @@ vim.keymap.set("n", "<leader>fb", '<cmd>lua require("fzf-lua").buffers()<CR>', {
 vim.keymap.set("n", "<leader>fh", '<cmd>lua require("fzf-lua").help_tags()<CR>', { desc = "Help tags" })
 
 -- Neo-tree: Reveal current file in floating window
-vim.keymap.set("n", "<leader>..", ":Neotree reveal<CR>", { desc = "Open all files" })
+vim.keymap.set("n", "<leader>..", ":Neotree float reveal<CR>", { desc = "Open all files" })
 vim.keymap.set("n", "<leader>.b", ":Neotree source=buffers float reveal<CR>", { desc = "Open buffers" })
+vim.keymap.set("n", "<leader>.g", ":Neotree source=git_status float reveal<CR>", { desc = "Open gitstatus" })

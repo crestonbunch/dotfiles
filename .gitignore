@@ -1,6 +1,6 @@
 *
-
 !.gitignore
+!.config/
 
 # tmux
 !.tmux
@@ -10,7 +10,10 @@
 !.zshenv
 
 # nvim
-!.config/
 !.config/nvim/
 !.config/nvim/**/*
+
+# ghostty
+!.config/ghostty/
+!.config/ghostty/**/*
 
