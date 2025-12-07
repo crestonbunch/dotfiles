@@ -1,49 +1,12 @@
 return {
 	{
-		"zbirenbaum/copilot.lua",
-		cmd = "Copilot",
-		event = "InsertEnter",
-		build = ":Copilot auth",
-		config = function()
-			require("copilot").setup({
-				suggestion = { enabled = false },
-				panel = { enabled = false },
-				nes = { enabled = true, auto_trigger = true },
-				filetypes = {
-					["*"] = true, -- Enable for all filetypes by default
-					sh = function()
-						-- Disable copilot for env files and .zshenv
-						local disabled_patterns = { "^%.env.*", "^%.zshenv$" }
-						local filename = vim.fs.basename(vim.api.nvim_buf_get_name(0))
-						for _, pattern in ipairs(disabled_patterns) do
-							if string.match(filename, pattern) then
-								return false
-							end
-						end
-						return true
-					end,
-				},
-				server_opts_overrides = {
-					settings = {
-						telemetry = {
-							telemetryLevel = "off",
-						},
-					},
-				},
-			})
-		end,
-		dependencies = {
-			"copilotlsp-nvim/copilot-lsp", -- (optional) for NES functionality
-		},
-	},
-	{
-		"giuxtaposition/blink-cmp-copilot",
+		"fang2hou/blink-copilot",
+		dependencies = { "copilot-lsp" },
 	},
 	{
 		"copilotlsp-nvim/copilot-lsp",
 		init = function()
 			vim.g.copilot_nes_debounce = 500
-			vim.lsp.enable("copilot_ls")
 			vim.keymap.set("n", "<tab>", function()
 				local bufnr = vim.api.nvim_get_current_buf()
 				local state = vim.b[bufnr].nes_state
@@ -61,6 +24,24 @@ return {
 					return "<C-i>"
 				end
 			end, { desc = "Accept Copilot NES suggestion", expr = true })
+			-- Clear copilot suggestion with Esc if visible, otherwise preserve default Esc behavior
+			vim.keymap.set("n", "<esc>", function()
+				if not require("copilot-lsp.nes").clear() then
+					-- fallback to other functionality
+				end
+			end, { desc = "Clear Copilot suggestion or fallback" })
+		end,
+		config = function()
+			vim.lsp.config("copilot_ls", {
+				cmd = { "copilot-language-server", "--stdio" },
+				root_markers = { ".git" },
+				settings = {
+					telemetry = {
+						telemetryLevel = "off",
+					},
+				},
+			})
+			vim.lsp.enable("copilot_ls")
 		end,
 	},
 }

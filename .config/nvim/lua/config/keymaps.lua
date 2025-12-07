@@ -11,3 +11,9 @@ vim.keymap.set("n", "<leader>fh", '<cmd>lua require("fzf-lua").help_tags()<CR>',
 vim.keymap.set("n", "<leader>..", ":Neotree float reveal<CR>", { desc = "Open all files" })
 vim.keymap.set("n", "<leader>.b", ":Neotree source=buffers float reveal<CR>", { desc = "Open buffers" })
 vim.keymap.set("n", "<leader>.g", ":Neotree source=git_status float reveal<CR>", { desc = "Open gitstatus" })
+
+-- LSP
+vim.keymap.set("n", "K", "<cmd>Lspsaga hover_doc")
+
+-- Sort
+vim.keymap.set("v", "<leader>sa", ":sort<CR>", { desc = "Sort selection" })

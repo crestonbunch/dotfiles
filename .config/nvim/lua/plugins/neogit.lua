@@ -9,7 +9,9 @@ return {
     },
     cmd = "Neogit",
     keys = {
-      { "<leader>gg", "<cmd>Neogit<cr>", desc = "Show Neogit UI" }
+      { "<leader>gg", "<cmd>Neogit<cr>", desc = "Show Neogit UI" },
+      { "<leader>gw", "<cmd>Neogit worktree<cr>", desc = "Neogit worktree" },
+      { "<leader>gc", "<cmd>Neogit commit<cr>", desc = "Neogit commit" },
     }
   }
 }
