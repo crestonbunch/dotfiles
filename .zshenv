@@ -1,7 +1,10 @@
 . "$HOME/.cargo/env"
 
 # uv
-export PATH="/Users/creston/.local/bin:$PATH"
+export PATH="$HOME/.local/bin:$PATH"
+
+# volta
+export PATH="$HOME/.volta/bin:$PATH"
 
 # editors
 export EDITOR="nvim"

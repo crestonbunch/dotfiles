@@ -25,6 +25,11 @@ vim.opt.showtabline = 2 -- Always show tabline
 vim.opt.colorcolumn = "80,100,120" -- Column markers
 vim.opt.list = true -- Show whitespace characters
 vim.opt.listchars = { tab = "→ ", trail = "·", nbsp = "␣", multispace = "·" } -- Whitespace character display
+vim.opt.updatetime = 300 -- Faster completion
+
+-- Backups
+vim.opt.backup = false
+vim.opt.writebackup = false
 
 -- syntax highlighting
 vim.opt.syntax = "enable"

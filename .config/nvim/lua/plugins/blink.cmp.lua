@@ -29,18 +29,23 @@ return {
 			preset = "super-tab",
 			["<Tab>"] = {
 				function(cmp)
+					-- Priority 1: If blink menu is visible, accept from blink
+					if cmp.is_visible() then
+						if cmp.snippet_active() then
+							return cmp.accept()
+						else
+							return cmp.select_and_accept()
+						end
+					end
+					-- Priority 2: If copilot inline suggestion is available, apply it
 					if vim.b[vim.api.nvim_get_current_buf()].nes_state then
-						cmp.hide()
 						return (
 							require("copilot-lsp.nes").apply_pending_nes()
 							and require("copilot-lsp.nes").walk_cursor_end_edit()
 						)
 					end
-					if cmp.snippet_active() then
-						return cmp.accept()
-					else
-						return cmp.select_and_accept()
-					end
+					-- Fallback: regular tab behavior
+					return true
 				end,
 				"snippet_forward",
 				"fallback",
@@ -53,8 +58,42 @@ return {
 			nerd_font_variant = "mono",
 		},
 
-		-- (Default) Only show the documentation popup when manually triggered
-		completion = { documentation = { auto_show = false } },
+		-- Show documentation popup automatically when selecting completion items
+		completion = {
+			menu = {
+				border = "rounded",
+				winhighlight = "Normal:NormalFloat,FloatBorder:FloatBorder,CursorLine:PmenuSel,Search:None",
+				draw = {
+					columns = {
+						{ "kind_icon" },
+						{ "label", "label_description", gap = 1 },
+						{ "kind" },
+						{ "source_name" },
+					},
+					components = {
+						kind = {
+							text = function(ctx)
+								return ctx.kind
+							end,
+							highlight = "CmpItemKind",
+						},
+						source_name = {
+							text = function(ctx)
+								return "[" .. ctx.source_name .. "]"
+							end,
+						},
+					},
+				},
+			},
+			documentation = {
+				auto_show = true,
+				auto_show_delay_ms = 500,
+				window = {
+					border = "rounded",
+					winhighlight = "Normal:NormalFloat,FloatBorder:FloatBorder",
+				},
+			},
+		},
 
 		-- Default list of enabled providers defined so that you can extend it
 		-- elsewhere in your config, without redefining it, due to `opts_extend`
