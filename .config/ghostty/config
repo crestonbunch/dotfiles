@@ -6,3 +6,9 @@ keybind = shift+enter=text:\x1b\r
 clipboard-read = allow
 clipboard-write = allow
 clipboard-trim-trailing-spaces = true
+
+# style
+window-padding-x = 8
+window-padding-y = 8
+window-padding-balance = true
+window-padding-color = background
