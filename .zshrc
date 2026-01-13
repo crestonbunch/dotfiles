@@ -26,3 +26,4 @@ zj() {
   zellij attach "$session_name" -c
 }
 
+eval "$(starship init zsh)"

@@ -19,6 +19,7 @@ vim.opt.termguicolors = true -- True color support
 vim.opt.signcolumn = "yes" -- Always show sign column
 vim.opt.cursorline = true -- Highlight current line
 vim.opt.wrap = false -- Disable line wrapping
+vim.opt.lazyredraw = true -- Don't redraw during macros
 vim.opt.scrolloff = 16 -- Minimum lines to keep above and below cursor
 vim.opt.sidescrolloff = 16 -- Minimum columns to keep left and right of cursor
 vim.opt.showtabline = 2 -- Always show tabline
@@ -37,12 +38,38 @@ vim.opt.syntax = "enable"
 -- Auto-reload files when changed outside of Neovim
 vim.opt.autoread = true
 
--- Check for file changes more frequently
-vim.api.nvim_create_autocmd({ "FocusGained", "BufEnter", "CursorHold", "CursorHoldI" }, {
+-- Check for file changes on focus/buffer enter (removed CursorHold for performance)
+vim.api.nvim_create_autocmd({ "FocusGained", "BufEnter" }, {
 	pattern = "*",
 	callback = function()
 		if vim.fn.mode() ~= "c" then
 			vim.cmd("checktime")
+		end
+	end,
+})
+
+-- Disable relativenumber in insert mode for performance
+vim.api.nvim_create_autocmd("InsertEnter", {
+	callback = function()
+		vim.opt.relativenumber = false
+	end,
+})
+vim.api.nvim_create_autocmd("InsertLeave", {
+	callback = function()
+		vim.opt.relativenumber = true
+	end,
+})
+
+-- Disable cursorline and other expensive features for large files
+vim.api.nvim_create_autocmd("BufReadPre", {
+	callback = function()
+		local max_filesize = 100 * 1024 -- 100 KB
+		local ok, stats = pcall(vim.uv.fs_stat, vim.api.nvim_buf_get_name(0))
+		if ok and stats and stats.size > max_filesize then
+			vim.opt_local.cursorline = false
+			vim.opt_local.relativenumber = false
+			vim.opt_local.foldmethod = "manual"
+			vim.opt_local.spell = false
 		end
 	end,
 })

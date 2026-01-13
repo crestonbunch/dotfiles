@@ -7,7 +7,12 @@ return {
 			"MunifTanjim/nui.nvim",
 			"nvim-tree/nvim-web-devicons", -- optional, but recommended
 		},
-		lazy = false,
+		lazy = false, -- neo-tree will lazy load itself 
+		cmd = "Neotree",
+		keys = {
+			{ "<leader>e", "<cmd>Neotree toggle<cr>", desc = "Toggle file tree" },
+			{ "<leader>E", "<cmd>Neotree reveal<cr>", desc = "Reveal file in tree" },
+		},
 		opts = {
 			filesystem = {
 				follow_current_file = {
