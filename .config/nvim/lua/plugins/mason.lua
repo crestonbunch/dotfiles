@@ -3,6 +3,9 @@ return {
 	opts = {
 		ensure_installed = {
 			"copilot-language-server",
+			"terraform-ls",
+			"typescript-language-server",
+			"ty",
 		},
 	},
 }

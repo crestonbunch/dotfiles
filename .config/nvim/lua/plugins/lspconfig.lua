@@ -31,6 +31,21 @@ return {
 			-- lspconfig.ts_ls.setup({ capabilities = capabilities })
 			-- lspconfig.lua_ls.setup({ capabilities = capabilities })
 			-- lspconfig.pyright.setup({ capabilities = capabilities })
+
+			-- Terraform
+			lspconfig.terraformls.setup({ capabilities = capabilities })
+
+			-- TypeScript/JavaScript
+			lspconfig.ts_ls.setup({ capabilities = capabilities })
+
+			-- Python (ty)
+			vim.lsp.config("ty", {
+				capabilities = capabilities,
+				settings = {
+					ty = {},
+				},
+			})
+			vim.lsp.enable("ty")
 		end,
 	},
 }
