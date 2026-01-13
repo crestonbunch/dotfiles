@@ -1,0 +1,19 @@
+layout {
+    default_tab_template {
+        pane size=1 borderless=true {
+            plugin location="zellij:tab-bar"
+        }
+        children
+        pane size=1 borderless=true {
+            plugin location="zellij:status-bar"
+        }
+    }
+
+    tab {
+        pane size="70%" command="nvim"
+        pane split_direction="vertical" size="30%" {
+            pane command="claude"
+            pane
+        }
+    }
+}

@@ -18,3 +18,7 @@
 !.config/ghostty/
 !.config/ghostty/**/*
 
+# zellij
+!.config/zellij/
+!.config/zellij/**/*
+
