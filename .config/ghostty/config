@@ -1,3 +1,8 @@
 font-family = FiraCode Nerd Font
 macos-option-as-alt = true
 keybind = shift+enter=text:\x1b\r
+
+# Clipboard integration
+clipboard-read = allow
+clipboard-write = allow
+clipboard-trim-trailing-spaces = true

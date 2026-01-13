@@ -49,3 +49,6 @@ vim.api.nvim_create_autocmd({ "FocusGained", "BufEnter", "CursorHold", "CursorHo
 
 -- sessions
 vim.opt.sessionoptions = "curdir,folds,globals,help,tabpages,terminal,winsize"
+
+-- Clipboard integration
+vim.opt.clipboard = "unnamedplus" -- Use system clipboard for all yank/delete/paste operations
