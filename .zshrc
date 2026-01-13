@@ -17,8 +17,8 @@ autoload -z edit-command-line
 zle -N edit-command-line
 bindkey '^G' edit-command-line
 
-bindkey ^R history-incremental-search-backward
-bindkey ^S history-incremental-search-forward
+bindkey '^R' history-incremental-search-backward
+bindkey '^S' history-incremental-search-forward
 
 # Zellij: attach to or create session based on current directory name
 zj() {
