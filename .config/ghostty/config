@@ -8,4 +8,4 @@ clipboard-write = allow
 clipboard-trim-trailing-spaces = true
 copy-on-select = true
 
-theme = dark:Builtin Solarized Dark,light:Builtin Solarized Light
+theme = dark:everforest-dark,light:everforest-light

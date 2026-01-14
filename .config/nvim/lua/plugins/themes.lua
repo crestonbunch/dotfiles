@@ -13,6 +13,19 @@ return {
 		end,
 	},
 	{
+		"neanias/everforest-nvim",
+		enabled = true,
+		version = false,
+		lazy = false,
+		priority = 1000,
+		config = function()
+			require("everforest").setup({
+				-- Your config here
+				vim.cmd.colorscheme("everforest"),
+			})
+		end,
+	},
+	{
 		"catppuccin/nvim",
 		enabled = false,
 		lazy = false,
@@ -45,7 +58,7 @@ return {
 	},
 	{
 		"maxmx03/solarized.nvim",
-		enabled = true,
+		enabled = false,
 		lazy = false,
 		priority = 1000,
 		---@type solarized.config
