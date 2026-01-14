@@ -14,7 +14,7 @@ return {
 	},
 	{
 		"catppuccin/nvim",
-		enabled = true,
+		enabled = false,
 		lazy = false,
 		priority = 1000,
 		config = function()
@@ -25,6 +25,35 @@ return {
 				},
 			})
 			vim.cmd.colorscheme("catppuccin")
+		end,
+	},
+	{
+		"loctvl842/monokai-pro.nvim",
+		enabled = false,
+		lazy = false,
+		priority = 1000,
+		config = function()
+			require("monokai-pro").setup({
+				day_night = {
+					enable = true,
+					day_filter = "light",
+					night_filter = "spectrum",
+				},
+			})
+			vim.cmd.colorscheme("monokai-pro")
+		end,
+	},
+	{
+		"maxmx03/solarized.nvim",
+		enabled = true,
+		lazy = false,
+		priority = 1000,
+		---@type solarized.config
+		opts = {},
+		config = function(_, opts)
+			vim.o.termguicolors = true
+			require("solarized").setup(opts)
+			vim.cmd.colorscheme("solarized")
 		end,
 	},
 }

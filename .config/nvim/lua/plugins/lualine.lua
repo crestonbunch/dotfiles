@@ -12,8 +12,6 @@ return {
 			opts.sections.lualine_c = opts.sections.lualine_c or { "filename" }
 			opts.sections.lualine_x = opts.sections.lualine_x or { "encoding", "fileformat", "filetype" }
 
-			opts.theme = "nord"
-
 			-- Set up trouble integration for LSP symbols
 			local has_trouble, trouble = pcall(require, "trouble")
 			if has_trouble then
