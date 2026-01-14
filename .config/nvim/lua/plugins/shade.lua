@@ -1,6 +1,7 @@
 return {
 	{
 		"sunjon/Shade.nvim",
+		enabled = false,
 		event = "VeryLazy",
 		config = function()
 			require("shade").setup({
