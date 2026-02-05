@@ -20,6 +20,14 @@ return {
 					leave_dirs_open = false, -- Close other directories when revealing
 				},
 			},
+			window = {
+				mappings = {
+					["<CR>"] = "open",
+					["<C-t>"] = "open_tabnew",
+					["<C-v>"] = "open_vsplit",
+					["<C-h>"] = "open_split",
+				},
+			},
 		},
 	},
 }

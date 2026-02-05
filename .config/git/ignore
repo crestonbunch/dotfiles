@@ -1,0 +1,7 @@
+**/.claude/settings.local.json
+
+# Eclipse/JDTLS
+.project
+.classpath
+.settings/
+.factorypath

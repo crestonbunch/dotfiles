@@ -12,6 +12,24 @@ return {
 					sign = true,
 					virtual_text = false,
 				},
+				finder = {
+					keys = {
+						open = "<CR>",
+						vsplit = "<C-v>",
+						split = "<C-h>",
+						tabe = "<C-t>",
+						quit = "q",
+					},
+				},
+				definition = {
+					keys = {
+						edit = "<CR>",
+						vsplit = "<C-v>",
+						split = "<C-h>",
+						tabe = "<C-t>",
+						quit = "q",
+					},
+				},
 			})
 		end,
 		dependencies = {

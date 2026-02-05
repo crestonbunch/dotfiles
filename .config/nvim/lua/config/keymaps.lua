@@ -19,3 +19,7 @@ vim.keymap.set("v", "<leader>sa", ":sort<CR>", { desc = "Sort selection" })
 -- Clear search highlighting
 vim.keymap.set("n", "<Esc>", "<cmd>nohlsearch<CR><Esc>", { desc = "Clear search highlighting" })
 vim.keymap.set("n", "<leader>h", "<cmd>nohlsearch<CR>", { desc = "Clear search highlighting" })
+
+-- Git
+-- symmetric diff against merge-base (...)
+vim.keymap.set("n", "<leader>gpr", "<cmd>DiffviewOpen origin/HEAD...HEAD --imply-local<CR>", { desc = "Diffview PR changes" })

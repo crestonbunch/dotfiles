@@ -14,5 +14,18 @@ return {
 			{ "<leader>fb", "<cmd>FzfLua buffers<cr>", desc = "Find buffers" },
 			{ "<leader>fh", "<cmd>FzfLua help_tags<cr>", desc = "Help tags" },
 		},
+		config = function()
+			local actions = require("fzf-lua.actions")
+			require("fzf-lua").setup({
+				actions = {
+					files = {
+						["enter"] = actions.file_edit,
+						["ctrl-t"] = actions.file_tabedit,
+						["ctrl-v"] = actions.file_vsplit,
+						["ctrl-h"] = actions.file_split,
+					},
+				},
+			})
+		end,
 	},
 }

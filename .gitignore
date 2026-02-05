@@ -22,3 +22,6 @@
 !.config/zellij/
 !.config/zellij/**/*
 
+# git
+!.config/git/
+!.config/git/**/*

@@ -6,7 +6,6 @@ return {
 			"saghen/blink.cmp",
 		},
 		config = function()
-			local lspconfig = require("lspconfig")
 			local capabilities = require("blink.cmp").get_lsp_capabilities()
 
 			-- Common LSP keybindings
@@ -16,27 +15,22 @@ return {
 					local opts = { buffer = ev.buf, silent = true }
 
 					-- Key mappings
-					vim.keymap.set("n", "gd", vim.lsp.buf.definition, opts)
+					vim.keymap.set("n", "gd", "<cmd>Lspsaga peek_definition<cr>", opts)
+					vim.keymap.set("n", "gr", "<cmd>Lspsaga finder<cr>", opts)
 					vim.keymap.set("n", "K", vim.lsp.buf.hover, opts)
 					vim.keymap.set("n", "gi", vim.lsp.buf.implementation, opts)
 					vim.keymap.set("n", "<leader>rn", vim.lsp.buf.rename, opts)
 					vim.keymap.set("n", "<leader>ca", vim.lsp.buf.code_action, opts)
-					vim.keymap.set("n", "gr", vim.lsp.buf.references, opts)
 				end,
 			})
 
-			-- Example LSP server configurations
-			-- Uncomment and configure the ones you need:
-
-			-- lspconfig.ts_ls.setup({ capabilities = capabilities })
-			-- lspconfig.lua_ls.setup({ capabilities = capabilities })
-			-- lspconfig.pyright.setup({ capabilities = capabilities })
-
 			-- Terraform
-			lspconfig.terraformls.setup({ capabilities = capabilities })
+			vim.lsp.config("terraformls", { capabilities = capabilities })
+			vim.lsp.enable("terraformls")
 
 			-- TypeScript/JavaScript
-			lspconfig.ts_ls.setup({ capabilities = capabilities })
+			vim.lsp.config("ts_ls", { capabilities = capabilities })
+			vim.lsp.enable("ts_ls")
 
 			-- Python (ty)
 			vim.lsp.config("ty", {
@@ -46,6 +40,12 @@ return {
 				},
 			})
 			vim.lsp.enable("ty")
+
+			-- Java
+			vim.lsp.config("jdtls", {
+				capabilities = capabilities,
+			})
+			vim.lsp.enable("jdtls")
 		end,
 	},
 }
