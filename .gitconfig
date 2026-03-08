@@ -1,0 +1,6 @@
+[user]
+name = Creston Bunch
+email = git@bunch.im
+
+[diff]
+external = difft

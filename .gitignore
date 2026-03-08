@@ -23,5 +23,11 @@
 !.config/zellij/**/*
 
 # git
+!.gitconfig
 !.config/git/
 !.config/git/**/*
+
+# jj
+!.jjconfig.toml
+!.config/jj/
+!.config/jj/config.toml
