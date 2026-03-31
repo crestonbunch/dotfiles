@@ -12,6 +12,11 @@ alias gg='git status'
 alias gc='git commit'
 alias gw='git add -i'
 
+# Workaround for: https://github.com/NixOS/nix/issues/11805
+if [ -e '/nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh' ]; then
+  . '/nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh'
+fi
+
 # --- Bind Ctrl+G to "edit current command in $EDITOR" ---
 autoload -z edit-command-line
 zle -N edit-command-line
@@ -27,3 +32,4 @@ zj() {
 }
 
 eval "$(starship init zsh)"
+

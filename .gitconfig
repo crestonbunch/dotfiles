@@ -4,3 +4,11 @@ email = git@bunch.im
 
 [diff]
 external = difft
+[credential "https://github.com"]
+	helper = 
+	helper = !/opt/homebrew/bin/gh auth git-credential
+[credential "https://gist.github.com"]
+	helper = 
+	helper = !/opt/homebrew/bin/gh auth git-credential
+[init]
+	defaultBranch = main
