@@ -29,6 +29,5 @@ edit-args = ["-c", '''
 ]
 
 [git]
+auto-track-bookmarks = "glob:creston/*"
 
-[remotes.origin]
-auto-track-bookmarks = "*"

@@ -34,3 +34,7 @@
 
 # starship
 !.config/starship.toml
+
+# kaisen
+!.config/kaisen/
+!.config/kaisen/**/*

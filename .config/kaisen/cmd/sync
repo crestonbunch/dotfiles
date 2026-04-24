@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# kaisen sync: `jj git fetch` from origin, then fast-forward each local
+# bookmark to its origin-tracked revision. Bookmarks that have diverged
+# (local is not an ancestor of remote) are skipped — `jj bookmark set`
+# refuses to move sideways/backwards without --allow-backwards.
+
+jj git fetch "$@"
+
+# Collect local bookmark names. The entry with no remote name is the local
+# bookmark itself; remote-only bookmarks are skipped — we only sync things
+# that already exist in the local working copy.
+names=$(
+  jj bookmark list --all-remotes -T '
+    if(remote, "", name ++ "\n")
+  ' | sort -u
+)
+
+if [[ -z $names ]]; then
+  echo "no local bookmarks"
+  exit 0
+fi
+
+moved=0
+skipped=0
+unchanged=0
+
+while IFS= read -r rawname; do
+  [[ -z $rawname ]] && continue
+
+  # jj auto-quotes names that aren't valid revset symbols (e.g. contain '.').
+  # The quoted form is a valid revset literal, so keep it for revset contexts;
+  # strip the quotes for the bookmark-name argument.
+  name="$rawname"
+  if [[ $name == \"*\" ]]; then
+    name="${name#\"}"
+    name="${name%\"}"
+  fi
+
+  local_rev=$(jj log --no-graph --ignore-working-copy \
+    -r "present($rawname)" -T 'commit_id' 2>/dev/null || true)
+  remote_rev=$(jj log --no-graph --ignore-working-copy \
+    -r "present($rawname@origin)" -T 'commit_id' 2>/dev/null || true)
+
+  if [[ -z $remote_rev ]]; then
+    continue
+  fi
+
+  if [[ $local_rev == "$remote_rev" ]]; then
+    unchanged=$((unchanged + 1))
+    continue
+  fi
+
+  if jj bookmark set "$name" -r "$rawname@origin" 2>/dev/null; then
+    printf '  → %s\n' "$name"
+    moved=$((moved + 1))
+  else
+    printf '  ! %s (diverged; skipping)\n' "$name" >&2
+    skipped=$((skipped + 1))
+  fi
+done <<< "$names"
+
+printf 'synced: %d moved, %d unchanged, %d skipped\n' \
+  "$moved" "$unchanged" "$skipped"

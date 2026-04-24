@@ -12,6 +12,9 @@ alias gg='git status'
 alias gc='git commit'
 alias gw='git add -i'
 
+# kaisen
+alias ks=kaisen
+
 # Workaround for: https://github.com/NixOS/nix/issues/11805
 if [ -e '/nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh' ]; then
   . '/nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh'
