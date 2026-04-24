@@ -1,3 +1,20 @@
+[python]
+disabled = true
+
+[custom.python]
+description = "Python version from the project venv's pyvenv.cfg (hidden when uv.lock exists)"
+when = 'test -f "${VIRTUAL_ENV:-.venv}/pyvenv.cfg" && ! test -f uv.lock'
+command = '''awk -F' *= *' '/^(version_info|version)/ {print $2; exit}' "${VIRTUAL_ENV:-.venv}/pyvenv.cfg"'''
+format = 'via [🐍 $output]($style) '
+style = "yellow bold"
+
+[custom.uv]
+description = "uv project (with python version from the venv's pyvenv.cfg if present)"
+when = "test -f uv.lock"
+command = '''awk -F' *= *' '/^(version_info|version)/ {print $2; exit}' "${VIRTUAL_ENV:-.venv}/pyvenv.cfg" 2>/dev/null || true'''
+format = 'via [🦄 uv $output]($style) '
+style = "purple bold"
+
 [custom.jj]
 description = "The current jj status"
 when = "jj --ignore-working-copy root"
@@ -60,3 +77,4 @@ when = "! jj --ignore-working-copy root"
 command = "starship module git_branch"
 description = "Only show git_branch if we're not in a jj repo"
 style = ""
+
