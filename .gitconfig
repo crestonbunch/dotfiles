@@ -2,6 +2,9 @@
 name = Creston Bunch
 email = git@bunch.im
 
+[include]
+path = ~/.gitconfig.local
+
 [diff]
 external = difft
 [credential "https://github.com"]

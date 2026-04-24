@@ -27,3 +27,8 @@ edit-args = ["-c", '''
   git -C "$right" clean -q -df # remove untracked files
 ''',
 ]
+
+[git]
+
+[remotes.origin]
+auto-track-bookmarks = "*"

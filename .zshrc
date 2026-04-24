@@ -35,4 +35,3 @@ autoload -Uz compinit && compinit
 source <(COMPLETE=zsh jj)
 
 eval "$(starship init zsh)"
-

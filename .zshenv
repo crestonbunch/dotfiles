@@ -14,10 +14,9 @@ export VISUAL="nvim"
 export PATH="$HOME/go/bin:$PATH"
 
 # generic Clang/GCC env vars to link dynamic Homebrew libraries
-export HOMEBREW_PREFIX=/opt/homebrew
-export CPATH=$HOMEBREW_PREFIX/include
-export LIBRARY_PATH=$HOMEBREW_PREFIX/lib
-export PKG_CONFIG_PATH="$HOMEBREW_PREFIX/opt/icu4c/lib/pkgconfig:$PKG_CONFIG_PATH"
+export CPATH=/opt/homebrew/include
+export LIBRARY_PATH=/opt/homebrew/lib
+export PKG_CONFIG_PATH="/opt/homebrew/opt/icu4c/lib/pkgconfig:$PKG_CONFIG_PATH"
 
 # android
 export ANDROID_HOME="${HOME}/Library/Android/sdk"
@@ -25,3 +24,5 @@ export ANDROID_HOME="${HOME}/Library/Android/sdk"
 # secrets
 source ~/.secrets.env
 
+# don't commit anything in this file
+source ~/.local.env
