@@ -31,3 +31,6 @@
 !.jjconfig.toml
 !.config/jj/
 !.config/jj/config.toml
+
+# starship
+!.config/starship.toml

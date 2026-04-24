@@ -31,5 +31,8 @@ zj() {
   zellij attach "$session_name" -c
 }
 
+autoload -Uz compinit && compinit
+source <(COMPLETE=zsh jj)
+
 eval "$(starship init zsh)"
 
