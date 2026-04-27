@@ -31,3 +31,115 @@ edit-args = ["-c", '''
 [git]
 auto-track-bookmarks = "glob:creston/*"
 
+[aliases]
+# Run pre-commit on files changed in a revset (default: @).
+#   jj precommit                       # check current change
+#   jj precommit 'trunk()..@'          # check whole stack
+precommit = ["util", "exec", "--", "sh", "-c", '''
+set -eu
+revset="${1:-@}"
+files=$(jj diff --name-only -r "$revset")
+if [ -z "$files" ]; then
+  echo "No files changed in $revset"
+  exit 0
+fi
+pre-commit run --files $files
+''', "jj-precommit"]
+
+# `jj stack book` — bookmark the most recent non-empty change in trunk()..@,
+#                   slugged from its description (mirrors `ks c`).
+# `jj stack sync` — push every local bookmark in trunk()..@ that is mine
+#                   (mirrors `ks ss`, sans the gh PR reconciliation).
+stack = ["util", "exec", "--", "bash", "-c", '''
+set -euo pipefail
+sub="${1:-}"
+shift || true
+case "$sub" in
+  book)
+    rev="latest(trunk()..@ & ~empty())"
+    subject=$(jj log --no-graph -r "$rev" -T 'description.first_line()' 2>/dev/null)
+    if [[ -z $subject ]]; then
+      echo "stack book: no non-empty change between trunk and @" >&2
+      exit 1
+    fi
+    slug=$(printf '%s' "$subject" \
+      | tr '[:upper:]' '[:lower:]' \
+      | sed -E 's/[^a-z0-9]+/-/g; s/(^-+|-+$)//g')
+    if (( ${#slug} > 32 )); then
+      slug=${slug:0:32}
+      slug=${slug%-*}
+    fi
+    [[ -z $slug ]] && slug=wip
+    branch="${USER}/${slug}"
+    if ! jj bookmark create "$branch" -r "$rev" 2>/dev/null; then
+      suffix=$(jj log --no-graph -r "$rev" -T 'change_id.shortest()')
+      branch="${branch}-${suffix}"
+      jj bookmark create "$branch" -r "$rev"
+    fi
+    printf 'bookmark: %s @ %s\n' "$branch" "$(jj log --no-graph -r "$rev" -T 'commit_id.short()')"
+    ;;
+  sync)
+    list_stack() {
+      jj log --ignore-working-copy --no-graph --reversed \
+        -r 'trunk()..@ & bookmarks() & mine()' \
+        -T 'local_bookmarks.map(|b| b.name() ++ "\n").join("")' 2>/dev/null
+    }
+    initial=()
+    while IFS= read -r b; do
+      [[ -n $b ]] && initial+=("$b")
+    done < <(list_stack)
+    if (( ${#initial[@]} == 0 )); then
+      echo "stack sync: no bookmarks between trunk and @" >&2
+      exit 1
+    fi
+
+    echo "→ fetching origin"
+    fetch_args=(--quiet)
+    for b in "${initial[@]}"; do
+      fetch_args+=(--branch "$b")
+    done
+    jj git fetch "${fetch_args[@]}" || true
+    # Also pull trunk + any other auto-tracked refs.
+    jj git fetch --quiet || true
+
+    echo "→ rebasing onto trunk() (--skip-emptied drops squash-merged commits)"
+    if ! jj rebase -s "roots(trunk()..@)" -d "trunk()" --skip-emptied; then
+      echo "stack sync: rebase failed; resolve conflicts and re-run" >&2
+      exit 1
+    fi
+
+    # Bookmarks that ended up in trunks ancestry were merged — forget them.
+    for b in "${initial[@]}"; do
+      if [[ -n $(jj log --ignore-working-copy --no-graph \
+        -r "$b & ::trunk()" -T 'change_id ++ "\n"' 2>/dev/null) ]]; then
+        echo "→ forgetting merged $b"
+        jj bookmark forget --include-remotes "$b" >/dev/null 2>&1 || true
+      fi
+    done
+
+    remaining=()
+    while IFS= read -r b; do
+      [[ -n $b ]] && remaining+=("$b")
+    done < <(list_stack)
+    if (( ${#remaining[@]} == 0 )); then
+      echo "✓ stack fully merged"
+      exit 0
+    fi
+
+    echo "→ pushing stack (bottom→top):"
+    printf '  - %s\n' "${remaining[@]}"
+    args=(--allow-new)
+    for b in "${remaining[@]}"; do
+      args+=(--bookmark "$b")
+    done
+    jj git push "${args[@]}"
+    ;;
+  *)
+    echo "usage: jj stack {book|sync}" >&2
+    exit 1
+    ;;
+esac
+''', "jj-stack"]
+sb = ["stack", "book"]
+ss = ["stack", "sync"]
+

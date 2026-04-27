@@ -13,9 +13,6 @@ export VISUAL="nvim"
 # go
 export PATH="$HOME/go/bin:$PATH"
 
-# kaisen
-export PATH="$HOME/.config/kaisen:$PATH"
-
 # generic Clang/GCC env vars to link dynamic Homebrew libraries
 export CPATH=/opt/homebrew/include
 export LIBRARY_PATH=/opt/homebrew/lib
