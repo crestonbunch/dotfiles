@@ -68,7 +68,14 @@ jj absorb
 if [ -z "$(jj log --no-graph -r '@ & ~empty()' -T 'change_id' 2>/dev/null)" ]; then
   jj abandon
 fi
-exit $status
+# A non-zero first run can mean either auto-fixes were applied or there are
+# unfixable issues. Re-run on the absorbed state to distinguish: a clean
+# second run means everything was auto-fixed, so treat it as success.
+if [ "$status" -ne 0 ]; then
+  files=$(jj diff --name-only -r "$revset")
+  [ -z "$files" ] && exit 0
+  pre-commit run --files $files
+fi
 ''', "jj-precommit"]
 
 # `jj b`         — bookmark the most recent non-empty change in trunk()..@,
