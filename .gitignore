@@ -30,6 +30,7 @@
 # jj
 !.jjconfig.toml
 !.config/jj/
+!.config/jj/PR_DESCRIBE_PROMPT.md
 !.config/jj/config.toml
 
 # starship
