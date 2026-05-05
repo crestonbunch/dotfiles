@@ -143,6 +143,7 @@ Subcommands:
   create     Create a GitHub PR for the nearest bookmark
   describe   Draft a PR description with Claude, edit, and update the PR
   assign     Pick reviewer(s) via fzf and request review on the PR
+  comments   Browse review comments and reply to one via $EDITOR
   update     Fetch trunk, rebase the stack, push, and reconcile PR bases
   push       Run pre-commit on the stack and push every bookmark
   rebase     Reconcile each open PR base to match the current stack
@@ -150,7 +151,7 @@ Subcommands:
   cleanup    After a merge, forget the local bookmark and rebase onto trunk
 EOF
     ;;
-  open|status|create|describe|assign|update|push|rebase|merge|cleanup)
+  open|status|create|describe|assign|comments|update|push|rebase|merge|cleanup)
     exec jj "pr-$sub" "$@"
     ;;
   *)
@@ -212,6 +213,32 @@ else
   while IFS=$'\t' read -r state user; do
     printf '  %-10s %s\n' "$state" "$user"
   done <<<"$reviewer_lines"
+fi
+repo_info=$(gh repo view --json owner,name)
+owner=$(jq -r '.owner.login' <<<"$repo_info")
+repo=$(jq -r '.name' <<<"$repo_info")
+threads_json=$(gh api graphql \
+  -f query='query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){author{login}reviewThreads(first:100){nodes{isResolved comments(first:100){nodes{author{login}}}}}}}}' \
+  -f owner="$owner" -f repo="$repo" -F number="$number" 2>/dev/null || echo '{}')
+metrics=$(jq -r '
+  .data.repository.pullRequest as $pr
+  | ($pr.author.login // "") as $author
+  | ($pr.reviewThreads.nodes // []) as $threads
+  | ($threads | map(select(.isResolved | not))) as $open
+  | [
+      ($threads | length),
+      ($open | length),
+      ($open | map(select((.comments.nodes | length) == 1)) | length),
+      ($open | map(select((.comments.nodes | last | .author.login // "") != $author)) | length)
+    ]
+  | @tsv
+' <<<"$threads_json")
+IFS=$'\t' read -r total unresolved no_reply awaiting <<<"$metrics"
+if (( total > 0 )); then
+  printf '\nThreads:\n'
+  printf '  Unresolved:        %d / %d\n' "$unresolved" "$total"
+  printf '  Without replies:   %d\n' "$no_reply"
+  printf '  Awaiting author:   %d\n' "$awaiting"
 fi
 all_json=$(gh pr checks "$name" --json bucket,name 2>/dev/null || true)
 required_json=$(gh pr checks "$name" --required --json name 2>/dev/null || true)
@@ -362,6 +389,129 @@ while IFS= read -r reviewer; do
 done <<<"$sel"
 gh pr edit "$head" "${args[@]}"
 ''', "jj-pr-assign"]
+
+# pr-comments: browse inline review comments + top-level PR comments, plus a
+# "<new comment>" entry for posting a fresh top-level comment. fzf-pick one,
+# write the body in $EDITOR (any context is prefilled as `#`-prefixed lines and
+# stripped on save). Inline replies thread via /pulls/N/comments/{id}/replies;
+# top-level posts go to /issues/N/comments.
+pr-comments = ["util", "exec", "--", "bash", "-c", '''
+set -euo pipefail
+head=$(jj bb | head -n1)
+if ! gh pr view "$head" --json number >/dev/null 2>&1; then
+  echo "no PR found for $head" >&2
+  exit 1
+fi
+number=$(gh pr view "$head" --json number --jq .number)
+repo_info=$(gh repo view --json owner,name)
+owner=$(jq -r '.owner.login' <<<"$repo_info")
+repo=$(jq -r '.name' <<<"$repo_info")
+work_dir=$(mktemp -d -t jj-pr-comments)
+trap 'rm -rf "$work_dir"' EXIT
+mkdir -p "$work_dir/ctx"
+gh api --paginate "/repos/$owner/$repo/pulls/$number/comments" \
+  | jq -s 'add // []' > "$work_dir/review.json"
+gh api --paginate "/repos/$owner/$repo/issues/$number/comments" \
+  | jq -s 'add // []' > "$work_dir/issue.json"
+# Synthetic <new comment> row, always first.
+printf 'new\t+   <new comment>  (post a new top-level PR comment)\n' \
+  > "$work_dir/fzf-input.tsv"
+echo "(post a new top-level comment on PR #$number)" > "$work_dir/ctx/new.txt"
+# Inline review comments — thread root first, replies chronological under it.
+jq -r '
+  sort_by([(.in_reply_to_id // .id), .created_at]) | .[]
+  | [
+      ("r" + (.id|tostring)),
+      (if .in_reply_to_id then "  ↳ " else "    " end)
+        + "@" + .user.login + "  "
+        + .path + ":" + ((.line // .original_line // "?") | tostring) + "  "
+        + (.body | gsub("[\\n\\r]+"; " ") | .[0:100])
+    ]
+  | @tsv
+' "$work_dir/review.json" >> "$work_dir/fzf-input.tsv"
+# Top-level (issue) comments — chronological.
+jq -r '
+  sort_by(.created_at) | .[]
+  | [
+      ("i" + (.id|tostring)),
+      "    @" + .user.login + "  (top-level)  "
+        + (.body | gsub("[\\n\\r]+"; " ") | .[0:100])
+    ]
+  | @tsv
+' "$work_dir/issue.json" >> "$work_dir/fzf-input.tsv"
+# Preview files keyed by prefixed id (r<id> / i<id> / new).
+jq -r '.[].id' "$work_dir/review.json" | while read -r id; do
+  jq -r --argjson id "$id" '
+    .[] | select(.id == $id)
+    | "@" + .user.login + " on " + .path + ":"
+      + ((.line // .original_line // "?") | tostring) + "\n"
+      + (if .in_reply_to_id then "(reply in thread " + (.in_reply_to_id|tostring) + ")\n" else "" end)
+      + "\n" + .diff_hunk
+      + "\n\n=== comment ===\n\n" + .body + "\n"
+  ' "$work_dir/review.json" > "$work_dir/ctx/r$id.txt"
+done
+jq -r '.[].id' "$work_dir/issue.json" | while read -r id; do
+  jq -r --argjson id "$id" '
+    .[] | select(.id == $id)
+    | "@" + .user.login + " (top-level)\n\n" + .body + "\n"
+  ' "$work_dir/issue.json" > "$work_dir/ctx/i$id.txt"
+done
+sel=$(fzf --no-sort \
+  --delimiter=$'\t' \
+  --with-nth=2.. \
+  --preview="cat $work_dir/ctx/{1}.txt" \
+  --preview-window=down:60%:wrap \
+  --bind=shift-up:preview-up,shift-down:preview-down,alt-u:preview-half-page-up,alt-d:preview-half-page-down \
+  --prompt="comment> " \
+  --header="↑/↓ pick · shift-↑/↓ scroll preview · alt-u/d half-page · ENTER post" \
+  < "$work_dir/fzf-input.tsv") || exit 0
+[[ -z $sel ]] && exit 0
+sel_id=$(cut -f1 <<<"$sel")
+reply_file="$work_dir/reply.md"
+case "$sel_id" in
+  new)
+    {
+      echo "# New top-level comment on PR #$number. Lines starting with # are stripped."
+      echo
+    } > "$reply_file"
+    ;;
+  *)
+    {
+      echo "# Reply to comment ${sel_id#[ri]}. Lines starting with # are stripped."
+      echo "#"
+      while IFS= read -r line; do
+        if [[ -z $line ]]; then
+          echo "#"
+        else
+          echo "# $line"
+        fi
+      done < "$work_dir/ctx/$sel_id.txt"
+      echo
+    } > "$reply_file"
+    ;;
+esac
+"${EDITOR:-vi}" "$reply_file"
+body=$(grep -v '^#' "$reply_file" || true)
+if [[ -z "${body//[[:space:]]/}" ]]; then
+  echo "empty body, aborting" >&2
+  exit 1
+fi
+case "$sel_id" in
+  r*)
+    cid=${sel_id#r}
+    gh api --method POST \
+      "/repos/$owner/$repo/pulls/$number/comments/$cid/replies" \
+      -f body="$body" >/dev/null
+    echo "reply posted to inline comment $cid"
+    ;;
+  i*|new)
+    gh api --method POST \
+      "/repos/$owner/$repo/issues/$number/comments" \
+      -f body="$body" >/dev/null
+    echo "top-level comment posted on PR #$number"
+    ;;
+esac
+''', "jj-pr-comments"]
 
 # pr-update: fetch trunk, rebase the stack onto it, push, and reconcile PR bases.
 pr-update = ["util", "exec", "--", "bash", "-c", '''
