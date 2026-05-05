@@ -7,6 +7,21 @@ email = "git@bunch.im"
 [ui]
 diff-editor = "diffview"
 diff-formatter = ["difft", "--color=always", "$left", "$right"]
+merge-editor = "nvimdiff"
+[merge-tools.nvimdiff]
+program = "nvim"
+merge-args = [
+  "-d", "$output",
+  "-c", "rightbelow vert diffsplit $base",
+  "-c", "wincmd h",
+  "-c", "rightbelow diffsplit $left",
+  "-c", "wincmd l",
+  "-c", "rightbelow diffsplit $right",
+  "-c", "wincmd t",
+  "-c", "nnoremap <buffer> <leader>l :diffget 3<CR>",
+  "-c", "nnoremap <buffer> <leader>b :diffget 2<CR>",
+  "-c", "nnoremap <buffer> <leader>r :diffget 4<CR>",
+]
 
 [merge-tools.diffview]
 # https://github.com/jj-vcs/jj/wiki/Vim,-Neovim

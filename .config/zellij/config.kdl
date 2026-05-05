@@ -1,4 +1,10 @@
 keybinds clear-defaults=true {
+    normal {
+        bind "Enter" {
+            WriteChars "\u{000D}";
+            MessagePlugin "autolock" {};
+        }
+    }
     locked {
         bind "Alt g" { SwitchToMode "normal"; }
         bind "Ctrl b" { SwitchToMode "tmux"; }
@@ -265,7 +271,7 @@ plugins {
         is_enabled true
         triggers "nvim|vim|git|fzf|zoxide|atuin"
         reaction_seconds "0.3"
-        print_to_log false
+        print_to_log true
     }
     compact-bar location="zellij:compact-bar"
     configuration location="zellij:configuration"
