@@ -594,12 +594,16 @@ if [[ $fails -gt 0 ]]; then
   exit 1
 fi
 head_sha=$(jj log --no-graph -r "$head" -T 'commit_id')
-gh pr merge "$head" --match-head-commit "$head_sha" "$@"
+gh pr merge "$head" --match-head-commit "$head_sha" --squash --delete-branch "$@"
 jj pr-cleanup
 ''', "jj-pr-merge"]
 
-# pr-cleanup: forget the local bookmark for the nearest merged PR, fetch trunk,
-# and rebase the stack onto it. Refuses to run if the PR isn't merged yet.
+# pr-cleanup: fetch the latest trunk, forget the merged PR's local bookmark,
+# rebase the stack, and abandon any commits emptied by the squash-merge.
+# Refuses to run if the PR isn't merged yet. Order matters: fetching first lets
+# jj see the remote branch deletion (from `gh pr merge --delete-branch`) so the
+# subsequent `bookmark forget` doesn't leave an untracked remote ref behind
+# (untracked remotes are in immutable_heads() and would block the rebase).
 pr-cleanup = ["util", "exec", "--", "bash", "-c", '''
 set -euo pipefail
 head=$(jj bb | head -n1)
@@ -608,9 +612,10 @@ if [[ "$state" != "MERGED" ]]; then
   printf 'refusing to cleanup: PR for %s is %s, not MERGED\n' "$head" "$state" >&2
   exit 1
 fi
-jj bookmark forget "$head"
 jj git fetch
+jj bookmark forget "$head" 2>/dev/null || true
 jj rebase -d 'trunk()'
+jj abandon 'trunk()..@ & empty()' 2>/dev/null || true
 ''', "jj-pr-cleanup"]
 
 # switch: fzf-pick a local bookmark and `jj edit` it.
