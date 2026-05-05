@@ -47,6 +47,12 @@ edit-args = ["-c", '''
 auto-track-bookmarks = "glob:creston/*"
 auto-track-created-bookmarks = "glob:creston/*"
 
+[revsets]
+log = "present(@) | ancestors((mine() ~ ::trunk()) | @, 2) | present(trunk())"
+
+[revset-aliases]
+"stack()" = "trunk()..@"
+
 [aliases]
 # Run pre-commit on files changed in a revset (default: @). Auto-fixes are
 # captured in a new revision on top of @ and then `jj absorb`ed back into the
@@ -116,7 +122,7 @@ if [[ -z ${out:-} ]]; then
   echo "no bookmark found between trunk and @" >&2
   exit 1
 fi
-printf '%s' "$out"
+printf '%s\n' "$out"
 ''', "jj-bb"]
 
 # bm: bookmark move. Find the closest bookmark in trunk()..@, target @ (or @-
@@ -292,7 +298,9 @@ fi
 ''', "jj-pr-status"]
 
 # pr-create: open a GitHub PR for the nearest bookmark, basing it on the
-# next-nearest bookmark (or repo default if there isn't one).
+# next-nearest bookmark (or repo default if there isn't one). Title comes from
+# the head commit's first description line; body is drafted by Claude (sonnet)
+# from the base..head diff and opened in $EDITOR for review before posting.
 # Extra args are forwarded to `gh pr create`.
 pr-create = ["util", "exec", "--", "bash", "-c", '''
 set -euo pipefail
@@ -300,13 +308,62 @@ bookmarks=()
 while IFS= read -r line; do
   bookmarks+=("$line")
 done < <(jj bb)
-head="${bookmarks[0]}"
-base="${bookmarks[1]:-}"
-if [[ -n $base ]]; then
-  exec gh pr create --head "$head" --base "$base" "$@"
-else
-  exec gh pr create --head "$head" "$@"
+if [[ ${#bookmarks[@]} -eq 0 ]]; then
+  exit 1
 fi
+head="${bookmarks[0]}"
+if (( ${#bookmarks[@]} > 1 )); then
+  base="${bookmarks[1]}"
+else
+  base=$(gh repo view --json defaultBranchRef -q .defaultBranchRef.name)
+fi
+title=$(jj log --no-graph -r "$head" -T 'description.first_line()')
+printf '==> Pushing stack\n' >&2
+jj pr-push
+if [[ -z $title ]]; then
+  echo "head commit has no description" >&2
+  exit 1
+fi
+prompt_file="$HOME/.config/jj/PR_DESCRIBE_PROMPT.md"
+if [[ ! -f $prompt_file ]]; then
+  echo "missing prompt file: $prompt_file" >&2
+  exit 1
+fi
+repo_root=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
+template_path=""
+for candidate in \
+  .github/PULL_REQUEST_TEMPLATE.md .github/pull_request_template.md \
+  PULL_REQUEST_TEMPLATE.md pull_request_template.md \
+  docs/PULL_REQUEST_TEMPLATE.md docs/pull_request_template.md; do
+  if [[ -f "$repo_root/$candidate" ]]; then
+    template_path="$repo_root/$candidate"
+    break
+  fi
+done
+prompt_input=$(mktemp -t jj-pr-create-prompt)
+body_file=$(mktemp -t jj-pr-create).md
+trap 'rm -f "$prompt_input" "$body_file"' EXIT
+{
+  cat "$prompt_file"
+  echo
+  if [[ -n $template_path ]]; then
+    echo "## GitHub PR template"
+    echo
+    cat "$template_path"
+    echo
+  fi
+  echo "## Git diff"
+  echo
+  jj diff --from "$base" --to "$head" --git
+} > "$prompt_input"
+echo "==> Drafting description with Claude (sonnet)..." >&2
+claude --model sonnet --print "$(cat "$prompt_input")" > "$body_file"
+"${EDITOR:-vi}" "$body_file"
+if [[ ! -s $body_file ]]; then
+  echo "empty description, not creating PR" >&2
+  exit 1
+fi
+exec gh pr create --head "$head" --base "$base" --title "$title" --body-file "$body_file" "$@"
 ''', "jj-pr-create"]
 
 # pr-describe: draft a PR description with Claude (sonnet), open it in $EDITOR
@@ -651,3 +708,10 @@ sel=$(jj log --no-graph --ignore-working-copy \
 [[ -z ${sel:-} ]] && exit 0
 exec jj edit "$sel"
 ''', "jj-switch"]
+
+# start: fetch the latest trunk and create a new empty change on top of it.
+start = ["util", "exec", "--", "bash", "-c", '''
+set -euo pipefail
+jj git fetch
+jj new 'trunk()'
+''', "jj-start"]
