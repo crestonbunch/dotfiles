@@ -67,12 +67,16 @@ if [ -z "$files" ]; then
   echo "No files changed in $revset"
   exit 0
 fi
+parent_change=$(jj log --no-graph -r '@' -T 'change_id')
 jj new
 status=0
 pre-commit run --files $files || status=$?
 jj absorb
+# If the scratch is still empty, move @ back to the original change. `jj edit`
+# auto-abandons the empty scratch (no descendants, no bookmarks). Don't use
+# `jj abandon` here — abandoning @ always synthesizes a new wc on the parent.
 if [ -z "$(jj log --no-graph -r '@ & ~empty()' -T 'change_id' 2>/dev/null)" ]; then
-  jj abandon
+  jj edit "$parent_change"
 fi
 # A non-zero first run can mean either auto-fixes were applied or there are
 # unfixable issues. Re-run on the absorbed state to distinguish: a clean

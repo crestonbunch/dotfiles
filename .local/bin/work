@@ -53,6 +53,47 @@ GRAPHQL
 
 response=$(gh api graphql -f query="$QUERY")
 
+# Follow-up: per PR, fetch the individual check contexts with isRequired so we
+# can decide ❌ based only on required statuses (not optional CI noise).
+prs_json=$(echo "$response" | jq -c '[.data.search.nodes[] | select(. != null and .number != null)]')
+
+required_query=$(echo "$prs_json" | jq -r '
+  if length == 0 then "" else
+    [ to_entries[] |
+      (.value.repository.nameWithOwner | split("/")) as $on
+      | "p\(.key):repository(owner:\"\($on[0])\",name:\"\($on[1])\"){pullRequest(number:\(.value.number)){commits(last:1){nodes{commit{statusCheckRollup{contexts(first:100){nodes{__typename ... on CheckRun{conclusion status isRequired(pullRequestNumber:\(.value.number))} ... on StatusContext{state isRequired(pullRequestNumber:\(.value.number))}}}}}}}}}"
+    ] | "query{" + join(" ") + "}"
+  end
+')
+
+if [ -n "$required_query" ]; then
+  required_response=$(gh api graphql -f query="$required_query" 2>/dev/null) || required_response='{"data":{}}'
+else
+  required_response='{"data":{}}'
+fi
+
+req_failing=$(echo "$required_response" | jq -c '
+  (.data // {})
+  | to_entries
+  | map({
+      key: .key,
+      value: (
+        [ (.value.pullRequest.commits.nodes[0].commit.statusCheckRollup.contexts.nodes // [])[]
+          | select(.isRequired == true) ] as $req
+        | any($req[];
+            (.__typename == "CheckRun" and (
+              .conclusion == "FAILURE" or .conclusion == "TIMED_OUT" or
+              .conclusion == "CANCELLED" or .conclusion == "ACTION_REQUIRED" or
+              .conclusion == "STARTUP_FAILURE"
+            )) or
+            (.__typename == "StatusContext" and (.state == "FAILURE" or .state == "ERROR"))
+          )
+      )
+    })
+  | from_entries
+')
+[ -z "$req_failing" ] && req_failing='{}'
+
 # Bold-on / bold-off / dim / reset escape codes (only when stdout is a TTY).
 if [ -t 1 ]; then
   B=$'\033[1m'; D=$'\033[2m'; R=$'\033[0m'
@@ -60,11 +101,12 @@ else
   B=""; D=""; R=""
 fi
 
-echo "$response" | jq -r --arg B "$B" --arg D "$D" --arg R "$R" '
-  def emoji(pr):
+echo "$prs_json" | jq -r --arg B "$B" --arg D "$D" --arg R "$R" --argjson reqFailing "$req_failing" '
+  def emoji(pr; idx):
     (pr.commits.nodes[0].commit.statusCheckRollup.state // "NONE") as $s
+    | ($reqFailing["p\(idx)"] // false) as $rf
     | if pr.isDraft then "📝"
-      elif $s == "FAILURE" or $s == "ERROR" then "❌"
+      elif $rf then "❌"
       elif $s == "PENDING" or $s == "EXPECTED" then "🟡"
       elif $s == "SUCCESS" and pr.reviewDecision == "APPROVED" then "🟢"
       elif $s == "SUCCESS" then "✅"
@@ -72,8 +114,8 @@ echo "$response" | jq -r --arg B "$B" --arg D "$D" --arg R "$R" '
       else "  "
       end;
 
-  .data.search.nodes
-  | map(select(. != null and .number != null))
+  to_entries
+  | map(.value + {_idx: .key})
   | group_by(.repository.nameWithOwner)
   | map({
       repo: .[0].repository.nameWithOwner,
@@ -83,6 +125,6 @@ echo "$response" | jq -r --arg B "$B" --arg D "$D" --arg R "$R" '
   | sort_by(.latest) | reverse
   | .[]
   | "\($B)\(.repo)\($R)",
-    (.prs[] | "  \(emoji(.))  #\(.number)  \(.title)\n      \($D)\(.url)\($R)"),
+    (.prs[] | "  \(emoji(.; ._idx))  #\(.number)  \(.title)\n      \($D)\(.url)\($R)"),
     ""
 '
