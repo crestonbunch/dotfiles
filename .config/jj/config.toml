@@ -324,8 +324,10 @@ fi
 head="${bookmarks[0]}"
 if (( ${#bookmarks[@]} > 1 )); then
   base="${bookmarks[1]}"
+  diff_base="$base"
 else
   base=$(gh repo view --json defaultBranchRef -q .defaultBranchRef.name)
+  diff_base="trunk()"
 fi
 title=$(jj log --no-graph -r "$head" -T 'description.first_line()')
 printf '==> Pushing stack\n' >&2
@@ -364,7 +366,7 @@ trap 'rm -f "$prompt_input" "$body_file"' EXIT
   fi
   echo "## Git diff"
   echo
-  jj diff --from "$base" --to "$head" --git
+  jj diff --from "$diff_base" --to "$head" --git
 } > "$prompt_input"
 echo "==> Drafting description with Claude (sonnet)..." >&2
 claude --model sonnet --print "$(cat "$prompt_input")" > "$body_file"
