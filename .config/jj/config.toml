@@ -54,6 +54,10 @@ log = "present(@) | ancestors((mine() ~ ::trunk()) | @, 2) | present(trunk())"
 "stack()" = "trunk()..@"
 
 [aliases]
+# lob: like `jj log` but restricted to bookmarked revisions. Non-bookmarked
+# revisions are elided (shown as `~`).
+lob = ["log", "-r", "bookmarks()"]
+
 # Run pre-commit on files changed in a revset (default: @). Auto-fixes are
 # captured in a new revision on top of @ and then `jj absorb`ed back into the
 # nearest mutable revisions; the scratch revision is abandoned if empty.
