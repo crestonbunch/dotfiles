@@ -39,3 +39,9 @@
 # kaisen
 !.config/kaisen/
 !.config/kaisen/**/*
+
+# scripts
+!.local/
+!.local/bin/
+!.local/bin/work
+!.local/bin/work-switch

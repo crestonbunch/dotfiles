@@ -673,16 +673,22 @@ if [[ $fails -gt 0 ]]; then
   exit 1
 fi
 head_sha=$(jj log --no-graph -r "$head" -T 'commit_id')
-gh pr merge "$head" --match-head-commit "$head_sha" --squash --delete-branch "$@"
+# Don't pass --delete-branch: gh's post-merge local-branch cleanup fails with
+# "could not determine current branch" because jj leaves git in detached-HEAD
+# state. pr-cleanup forgets the local bookmark; the remote branch sticks
+# around (GitHub auto-delete-on-merge can clean it up server-side).
+gh pr merge "$head" --match-head-commit "$head_sha" --squash "$@"
 jj pr-cleanup
 ''', "jj-pr-merge"]
 
 # pr-cleanup: fetch the latest trunk, forget the merged PR's local bookmark,
 # rebase the stack, and abandon any commits emptied by the squash-merge.
 # Refuses to run if the PR isn't merged yet. Order matters: fetching first lets
-# jj see the remote branch deletion (from `gh pr merge --delete-branch`) so the
-# subsequent `bookmark forget` doesn't leave an untracked remote ref behind
-# (untracked remotes are in immutable_heads() and would block the rebase).
+# jj see any remote branch deletion (e.g. from GitHub's auto-delete-branch-on-
+# merge setting) so the subsequent `bookmark forget` doesn't leave an untracked
+# remote ref behind (untracked remotes are in immutable_heads() and would
+# block the rebase). If the remote branch still exists after fetch, the rebase
+# may fail; delete it on GitHub or enable auto-delete-branch-on-merge.
 pr-cleanup = ["util", "exec", "--", "bash", "-c", '''
 set -euo pipefail
 head=$(jj bb | head -n1)

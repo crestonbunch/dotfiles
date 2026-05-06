@@ -1,0 +1,88 @@
+#!/usr/bin/env bash
+# work          → list my open GitHub PRs, grouped by repo, newest repos first.
+# work switch   → fzf picker that cd's to the repo, jj-edits the PR bookmark,
+#                 and attaches/switches to a zellij session.
+set -euo pipefail
+
+case "${1:-}" in
+  switch)
+    shift
+    exec work-switch "$@"
+    ;;
+  ""|list) ;;
+  -h|--help)
+    echo "usage: work [list|switch]"
+    exit 0
+    ;;
+  *)
+    echo "usage: work [list|switch]" >&2
+    exit 2
+    ;;
+esac
+
+if ! command -v gh >/dev/null 2>&1; then
+  echo "error: gh CLI not found in PATH" >&2
+  exit 1
+fi
+if ! command -v jq >/dev/null 2>&1; then
+  echo "error: jq not found in PATH" >&2
+  exit 1
+fi
+
+read -r -d '' QUERY <<'GRAPHQL' || true
+query {
+  search(query: "is:pr author:@me is:open archived:false", type: ISSUE, first: 100) {
+    nodes {
+      ... on PullRequest {
+        number
+        title
+        url
+        isDraft
+        updatedAt
+        reviewDecision
+        mergeable
+        repository { nameWithOwner }
+        commits(last: 1) {
+          nodes { commit { statusCheckRollup { state } } }
+        }
+      }
+    }
+  }
+}
+GRAPHQL
+
+response=$(gh api graphql -f query="$QUERY")
+
+# Bold-on / bold-off / dim / reset escape codes (only when stdout is a TTY).
+if [ -t 1 ]; then
+  B=$'\033[1m'; D=$'\033[2m'; R=$'\033[0m'
+else
+  B=""; D=""; R=""
+fi
+
+echo "$response" | jq -r --arg B "$B" --arg D "$D" --arg R "$R" '
+  def emoji(pr):
+    (pr.commits.nodes[0].commit.statusCheckRollup.state // "NONE") as $s
+    | if pr.isDraft then "📝"
+      elif $s == "FAILURE" or $s == "ERROR" then "❌"
+      elif $s == "PENDING" or $s == "EXPECTED" then "🟡"
+      elif $s == "SUCCESS" and pr.reviewDecision == "APPROVED" then "🟢"
+      elif $s == "SUCCESS" then "✅"
+      elif pr.reviewDecision == "CHANGES_REQUESTED" then "🔁"
+      else "  "
+      end;
+
+  .data.search.nodes
+  | map(select(. != null and .number != null))
+  | group_by(.repository.nameWithOwner)
+  | map({
+      repo: .[0].repository.nameWithOwner,
+      latest: (map(.updatedAt) | max),
+      prs: (sort_by(.updatedAt) | reverse)
+    })
+  | sort_by(.latest) | reverse
+  | .[]
+  | "\($B)\(.repo)\($R)",
+    (.prs[] | "  \(emoji(.))  #\(.number)  \(.title)\n      \($D)\(.url)\($R)"),
+    ""
+'

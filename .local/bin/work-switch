@@ -1,0 +1,102 @@
+#!/usr/bin/env bash
+# Interactive PR picker: fzf → cd to ~/<owner>/<repo>, jj edit the bookmark,
+# then attach/switch to a zellij session named after the repo.
+set -euo pipefail
+
+for cmd in gh jq fzf jj zellij; do
+  command -v "$cmd" >/dev/null 2>&1 || {
+    echo "error: $cmd not found in PATH" >&2; exit 1;
+  }
+done
+
+read -r -d '' QUERY <<'GRAPHQL' || true
+query {
+  search(query: "is:pr author:@me is:open archived:false", type: ISSUE, first: 100) {
+    nodes {
+      ... on PullRequest {
+        number
+        title
+        url
+        isDraft
+        updatedAt
+        reviewDecision
+        headRefName
+        repository { nameWithOwner }
+        commits(last: 1) {
+          nodes { commit { statusCheckRollup { state } } }
+        }
+      }
+    }
+  }
+}
+GRAPHQL
+
+response=$(gh api graphql -f query="$QUERY")
+
+# Build TSV: <repo>\t<branch>\t<display label>
+# fzf shows only the label; on select we parse repo+branch from the picked line.
+pick=$(
+  echo "$response" | jq -r '
+    def emoji(pr):
+      (pr.commits.nodes[0].commit.statusCheckRollup.state // "NONE") as $s
+      | if pr.isDraft then "📝"
+        elif $s == "FAILURE" or $s == "ERROR" then "❌"
+        elif $s == "PENDING" or $s == "EXPECTED" then "🟡"
+        elif $s == "SUCCESS" and pr.reviewDecision == "APPROVED" then "🟢"
+        elif $s == "SUCCESS" then "✅"
+        elif pr.reviewDecision == "CHANGES_REQUESTED" then "🔁"
+        else "  "
+        end;
+    .data.search.nodes
+    | map(select(. != null and .number != null))
+    | sort_by(.updatedAt) | reverse
+    | .[]
+    | [
+        .repository.nameWithOwner,
+        .headRefName,
+        "\(emoji(.))  \(.repository.nameWithOwner)  #\(.number)  \(.title)"
+      ]
+    | @tsv
+  ' | fzf \
+      --delimiter=$'\t' \
+      --with-nth=3.. \
+      --no-multi \
+      --prompt='PR > ' \
+      --header='enter: switch | esc: cancel'
+)
+
+[ -z "$pick" ] && exit 0
+
+IFS=$'\t' read -r repo branch _ <<<"$pick"
+repo_dir="$HOME/$repo"
+session_name=$(basename "$repo_dir" | tr . _)
+
+if [ ! -d "$repo_dir" ]; then
+  echo "error: $repo_dir does not exist on disk" >&2
+  exit 1
+fi
+
+# Switch the working copy to the PR's bookmark. Try local, then remote-tracking,
+# then fetch + remote-tracking. Stay in subshell so the caller's cwd is unaffected.
+checkout() (
+  cd "$repo_dir"
+  if jj edit "$branch" 2>/dev/null; then return 0; fi
+  if jj edit "${branch}@origin" 2>/dev/null; then return 0; fi
+  echo "→ fetching '$branch' from origin..." >&2
+  jj git fetch --branch "$branch" >/dev/null 2>&1 || jj git fetch >/dev/null 2>&1 || true
+  jj edit "${branch}@origin"
+)
+
+if ! checkout; then
+  echo "error: could not jj edit bookmark '$branch' in $repo_dir" >&2
+  exit 1
+fi
+
+if [ -n "${ZELLIJ:-}" ]; then
+  # Inside zellij: switch-session attaches to an existing session of that name,
+  # and (in zellij ≥0.42) creates one with --cwd if it doesn't exist.
+  exec zellij action switch-session --cwd "$repo_dir" "$session_name"
+else
+  cd "$repo_dir"
+  exec zellij attach -c "$session_name"
+fi

@@ -12,6 +12,9 @@ alias gg='git status'
 alias gc='git commit'
 alias gw='git add -i'
 
+# show my open GitHub PRs grouped by repo
+alias work="$HOME/.local/bin/work"
+
 # Workaround for: https://github.com/NixOS/nix/issues/11805
 if [ -e '/nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh' ]; then
   . '/nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh'
