@@ -177,9 +177,11 @@ Subcommands:
   rebase     Reconcile each open PR base to match the current stack
   merge      Merge the nearest bookmark PR (with safety checks)
   cleanup    After a merge, forget the local bookmark and rebase onto trunk
+  close      Close the nearest bookmark PR and forget the local bookmark
+  abandon    Run `pr close` and abandon the PR's revisions if safe
 EOF
     ;;
-  open|status|create|describe|assign|comments|update|push|rebase|merge|cleanup)
+  open|status|create|describe|assign|comments|update|push|rebase|merge|cleanup|close|abandon)
     exec jj "pr-$sub" "$@"
     ;;
   *)
@@ -702,6 +704,62 @@ jj bookmark forget "$head" 2>/dev/null || true
 jj rebase -d 'trunk()'
 jj abandon 'trunk()..@ & empty()' 2>/dev/null || true
 ''', "jj-pr-cleanup"]
+
+# pr-close: close the GitHub PR for the bookmark closest to @ and forget the
+# local bookmark. Refuses if the PR isn't OPEN. Revisions are left intact.
+pr-close = ["util", "exec", "--", "bash", "-c", '''
+set -euo pipefail
+head=$(jj bb | head -n1)
+state=$(gh pr view "$head" --json state -q .state)
+if [[ "$state" != "OPEN" ]]; then
+  printf 'refusing to close: PR for %s is %s, not OPEN\n' "$head" "$state" >&2
+  exit 1
+fi
+gh pr close "$head"
+jj git fetch
+jj bookmark forget "$head" 2>/dev/null || true
+''', "jj-pr-close"]
+
+# pr-abandon: run pr-close, then abandon the PR's revisions iff they have no
+# ancestors outside the PR stack — i.e., every ancestor is either in the
+# trunk's history (::trunk()) or somewhere in the current stack (trunk()..@).
+# Catches cases like a merge commit pulling in unrelated work that we don't
+# want to silently drop. We capture the revs (and the safety check) before
+# running pr-close, since pr-close forgets the bookmark.
+pr-abandon = ["util", "exec", "--", "bash", "-c", '''
+set -euo pipefail
+bookmarks=()
+while IFS= read -r line; do
+  bookmarks+=("$line")
+done < <(jj bb)
+if [[ ${#bookmarks[@]} -eq 0 ]]; then
+  exit 1
+fi
+head="${bookmarks[0]}"
+if (( ${#bookmarks[@]} > 1 )); then
+  prev="${bookmarks[1]}"
+else
+  prev="trunk()"
+fi
+revs=$(jj log --no-graph --ignore-working-copy \
+  -r "${prev}..${head}" -T 'change_id ++ "\n"' 2>/dev/null \
+  | awk 'NF' | paste -sd '|' -)
+outside=""
+if [[ -n $revs ]]; then
+  outside=$(jj log --no-graph --ignore-working-copy \
+    -r "::(${revs}) ~ ::trunk() ~ (trunk()..@) ~ (${revs})" \
+    -T 'change_id ++ "\n"' 2>/dev/null | awk 'NF' || true)
+fi
+jj pr-close
+if [[ -z $revs ]]; then
+  exit 0
+fi
+if [[ -n $outside ]]; then
+  echo "skipping abandon: PR revisions have ancestors outside the PR stack" >&2
+  exit 0
+fi
+jj abandon -r "$revs"
+''', "jj-pr-abandon"]
 
 # switch: fzf-pick a local bookmark and `jj edit` it.
 switch = ["util", "exec", "--", "bash", "-c", '''
