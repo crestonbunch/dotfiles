@@ -178,7 +178,7 @@ Subcommands:
   merge      Merge the nearest bookmark PR (with safety checks)
   cleanup    After a merge, forget the local bookmark and rebase onto trunk
   close      Close the nearest bookmark PR and forget the local bookmark
-  abandon    Run `pr close` and abandon the PR's revisions if safe
+  abandon    Run `pr close` and abandon the PR's revisions
 EOF
     ;;
   open|status|create|describe|assign|comments|update|push|rebase|merge|cleanup|close|abandon)
@@ -720,12 +720,8 @@ jj git fetch
 jj bookmark forget "$head" 2>/dev/null || true
 ''', "jj-pr-close"]
 
-# pr-abandon: run pr-close, then abandon the PR's revisions iff they have no
-# ancestors outside the PR stack — i.e., every ancestor is either in the
-# trunk's history (::trunk()) or somewhere in the current stack (trunk()..@).
-# Catches cases like a merge commit pulling in unrelated work that we don't
-# want to silently drop. We capture the revs (and the safety check) before
-# running pr-close, since pr-close forgets the bookmark.
+# pr-abandon: run pr-close, then abandon the PR's revisions. Captures the revs
+# before pr-close runs since pr-close forgets the bookmark.
 pr-abandon = ["util", "exec", "--", "bash", "-c", '''
 set -euo pipefail
 bookmarks=()
@@ -744,18 +740,8 @@ fi
 revs=$(jj log --no-graph --ignore-working-copy \
   -r "${prev}..${head}" -T 'change_id ++ "\n"' 2>/dev/null \
   | awk 'NF' | paste -sd '|' -)
-outside=""
-if [[ -n $revs ]]; then
-  outside=$(jj log --no-graph --ignore-working-copy \
-    -r "::(${revs}) ~ ::trunk() ~ (trunk()..@) ~ (${revs})" \
-    -T 'change_id ++ "\n"' 2>/dev/null | awk 'NF' || true)
-fi
 jj pr-close
 if [[ -z $revs ]]; then
-  exit 0
-fi
-if [[ -n $outside ]]; then
-  echo "skipping abandon: PR revisions have ancestors outside the PR stack" >&2
   exit 0
 fi
 jj abandon -r "$revs"
