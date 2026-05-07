@@ -38,9 +38,11 @@ query {
         title
         url
         isDraft
+        createdAt
         updatedAt
         reviewDecision
         mergeable
+        author { login }
         repository { nameWithOwner }
         commits(last: 1) {
           nodes { commit { statusCheckRollup { state } } }
@@ -53,46 +55,92 @@ GRAPHQL
 
 response=$(gh api graphql -f query="$QUERY")
 
-# Follow-up: per PR, fetch the individual check contexts with isRequired so we
-# can decide ❌ based only on required statuses (not optional CI noise).
+# Follow-up: per PR, fetch required-check details plus review threads, latest
+# reviews, and review requests so we can show comment / check / reviewer info.
 prs_json=$(echo "$response" | jq -c '[.data.search.nodes[] | select(. != null and .number != null)]')
 
-required_query=$(echo "$prs_json" | jq -r '
+extras_query=$(echo "$prs_json" | jq -r '
   if length == 0 then "" else
     [ to_entries[] |
       (.value.repository.nameWithOwner | split("/")) as $on
-      | "p\(.key):repository(owner:\"\($on[0])\",name:\"\($on[1])\"){pullRequest(number:\(.value.number)){commits(last:1){nodes{commit{statusCheckRollup{contexts(first:100){nodes{__typename ... on CheckRun{conclusion status isRequired(pullRequestNumber:\(.value.number))} ... on StatusContext{state isRequired(pullRequestNumber:\(.value.number))}}}}}}}}}"
+      | "p\(.key):repository(owner:\"\($on[0])\",name:\"\($on[1])\"){pullRequest(number:\(.value.number)){commits(last:1){nodes{commit{statusCheckRollup{contexts(first:100){nodes{__typename ... on CheckRun{conclusion status isRequired(pullRequestNumber:\(.value.number))} ... on StatusContext{state isRequired(pullRequestNumber:\(.value.number))}}}}}}} reviewThreads(first:50){nodes{isResolved comments(last:1){nodes{author{login}}}}} latestReviews(first:30){nodes{author{login} state}} reviewRequests(first:30){nodes{requestedReviewer{__typename ... on User{login} ... on Team{slug}}}}}}"
     ] | "query{" + join(" ") + "}"
   end
 ')
 
-if [ -n "$required_query" ]; then
-  required_response=$(gh api graphql -f query="$required_query" 2>/dev/null) || required_response='{"data":{}}'
+if [ -n "$extras_query" ]; then
+  extras_response=$(gh api graphql -f query="$extras_query" 2>/dev/null) || extras_response='{"data":{}}'
 else
-  required_response='{"data":{}}'
+  extras_response='{"data":{}}'
 fi
 
-req_failing=$(echo "$required_response" | jq -c '
-  (.data // {})
+pr_extras=$(echo "$extras_response" | jq -c --argjson prs "$prs_json" '
+  (.data // {}) as $data
+  | $prs
   | to_entries
-  | map({
-      key: .key,
-      value: (
-        [ (.value.pullRequest.commits.nodes[0].commit.statusCheckRollup.contexts.nodes // [])[]
-          | select(.isRequired == true) ] as $req
-        | any($req[];
-            (.__typename == "CheckRun" and (
-              .conclusion == "FAILURE" or .conclusion == "TIMED_OUT" or
-              .conclusion == "CANCELLED" or .conclusion == "ACTION_REQUIRED" or
-              .conclusion == "STARTUP_FAILURE"
-            )) or
-            (.__typename == "StatusContext" and (.state == "FAILURE" or .state == "ERROR"))
-          )
-      )
-    })
+  | map(
+      .key as $idx
+      | .value as $pr
+      | ($pr.author.login // "") as $author
+      | ($data["p\($idx)"].pullRequest // {}) as $extra
+      | {
+          key: "p\($idx)",
+          value: {
+            failing_required: ([
+              ($extra.commits.nodes[0].commit.statusCheckRollup.contexts.nodes // [])[]
+              | select(.isRequired == true)
+              | select(
+                  (.__typename == "CheckRun" and (
+                    .conclusion == "FAILURE" or .conclusion == "TIMED_OUT" or
+                    .conclusion == "CANCELLED" or .conclusion == "ACTION_REQUIRED" or
+                    .conclusion == "STARTUP_FAILURE"
+                  )) or
+                  (.__typename == "StatusContext" and (.state == "FAILURE" or .state == "ERROR"))
+                )
+            ] | length),
+            pending_required: ([
+              ($extra.commits.nodes[0].commit.statusCheckRollup.contexts.nodes // [])[]
+              | select(.isRequired == true)
+              | select(
+                  (.__typename == "CheckRun" and (.status != "COMPLETED")) or
+                  (.__typename == "StatusContext" and (.state == "PENDING" or .state == "EXPECTED"))
+                )
+            ] | length),
+            unresolved_no_reply: ([
+              ($extra.reviewThreads.nodes // [])[]
+              | select(.isResolved != true)
+              | (.comments.nodes // []) as $cs
+              | select(($cs | length) > 0)
+              | select(($cs[-1].author.login // "") != $author)
+            ] | length),
+            reviewers: (
+              (
+                ($extra.latestReviews.nodes // [])
+                | map({
+                    login: (.author.login // "?"),
+                    state: (.state // "PENDING")
+                  })
+              ) +
+              (
+                ($extra.reviewRequests.nodes // [])
+                | map({
+                    login: (.requestedReviewer.login // .requestedReviewer.slug // "?"),
+                    state: "PENDING"
+                  })
+              )
+              | group_by(.login)
+              | map(
+                  (map(select(.state == "PENDING"))) as $pending
+                  | if ($pending | length) > 0 then $pending[0] else .[0] end
+                )
+              | sort_by(.login)
+            )
+          }
+        }
+    )
   | from_entries
 ')
-[ -z "$req_failing" ] && req_failing='{}'
+[ -z "$pr_extras" ] && pr_extras='{}'
 
 # Bold-on / bold-off / dim / reset escape codes (only when stdout is a TTY).
 if [ -t 1 ]; then
@@ -101,18 +149,60 @@ else
   B=""; D=""; R=""
 fi
 
-echo "$prs_json" | jq -r --arg B "$B" --arg D "$D" --arg R "$R" --argjson reqFailing "$req_failing" '
+echo "$prs_json" | jq -r --arg B "$B" --arg D "$D" --arg R "$R" --argjson extras "$pr_extras" '
+  def age(created):
+    ((now - (created | fromdateiso8601)) / 60) as $mins
+    | if $mins < 60 then "\($mins | floor)m"
+      elif $mins < 1440 then "\(($mins / 60) | floor)h"
+      elif $mins < 10080 then "\(($mins / 1440) | floor)d"
+      elif $mins < 525600 then "\(($mins / 10080) | floor)w"
+      else "\(($mins / 525600) | floor)y"
+      end;
+
+  def state_emoji(s):
+    if s == "APPROVED" then "✅"
+    elif s == "CHANGES_REQUESTED" then "❌"
+    elif s == "COMMENTED" then "❓"
+    elif s == "DISMISSED" then "⊘"
+    elif s == "PENDING" then "⏳"
+    else "?"
+    end;
+
   def emoji(pr; idx):
-    (pr.commits.nodes[0].commit.statusCheckRollup.state // "NONE") as $s
-    | ($reqFailing["p\(idx)"] // false) as $rf
+    ($extras["p\(idx)"] // {}) as $e
+    | ($e.failing_required // 0) as $fail
+    | ($e.pending_required // 0) as $pend
+    | (($e.reviewers // []) | length) as $rev_count
+    | pr.reviewDecision as $rd
     | if pr.isDraft then "📝"
-      elif $rf then "❌"
-      elif $s == "PENDING" or $s == "EXPECTED" then "🟡"
-      elif $s == "SUCCESS" and pr.reviewDecision == "APPROVED" then "🟢"
-      elif $s == "SUCCESS" then "✅"
-      elif pr.reviewDecision == "CHANGES_REQUESTED" then "🔁"
+      elif $fail > 0 then "🔴"
+      elif $rev_count == 0 then "📤"
+      elif $rd == "APPROVED" and $pend == 0 then "🟢"
+      elif $rd == "APPROVED" then "❎"
+      elif $rd == "CHANGES_REQUESTED" then "🔁"
       else "  "
       end;
+
+  def info_line(idx):
+    ($extras["p\(idx)"] // {}) as $e
+    | [
+        (if ($e.unresolved_no_reply // 0) > 0 then "💬 \($e.unresolved_no_reply)" else null end),
+        (
+          ($e.reviewers // []) as $rev
+          | if ($rev | length) == 0 then "👥 no reviewers"
+            else
+              ($rev | length) as $total
+              | (["APPROVED","CHANGES_REQUESTED","COMMENTED","DISMISSED","PENDING"]
+                  | map(
+                      . as $st
+                      | ($rev | map(select(.state == $st)) | length) as $n
+                      | select($n > 0)
+                      | "\(state_emoji($st)) \($n)/\($total)"
+                    )) as $parts
+              | "👥 " + ($parts | join(" "))
+            end
+        )
+      ] | map(select(. != null)) | join("  ");
 
   to_entries
   | map(.value + {_idx: .key})
@@ -125,6 +215,6 @@ echo "$prs_json" | jq -r --arg B "$B" --arg D "$D" --arg R "$R" --argjson reqFai
   | sort_by(.latest) | reverse
   | .[]
   | "\($B)\(.repo)\($R)",
-    (.prs[] | "  \(emoji(.; ._idx))  #\(.number)  \(.title)\n      \($D)\(.url)\($R)"),
+    (.prs[] | "  \(emoji(.; ._idx))  #\(.number) · \(age(.createdAt)) · \(.title)\n      \(info_line(._idx))\n      \($D)\(.url)\($R)"),
     ""
 '
