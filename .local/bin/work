@@ -9,13 +9,17 @@ case "${1:-}" in
     shift
     exec work-switch "$@"
     ;;
+  jira)
+    shift
+    exec work-jira "$@"
+    ;;
   ""|list) ;;
   -h|--help)
-    echo "usage: work [list|switch]"
+    echo "usage: work [list|switch|jira]"
     exit 0
     ;;
   *)
-    echo "usage: work [list|switch]" >&2
+    echo "usage: work [list|switch|jira]" >&2
     exit 2
     ;;
 esac

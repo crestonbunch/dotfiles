@@ -178,6 +178,7 @@ Subcommands:
   status     Show CI status checks for the nearest bookmark's PR
   create     Create a GitHub PR for the nearest bookmark
   describe   Draft a PR description with Claude, edit, and update the PR
+  edit       Edit the PR title and description in \$EDITOR
   assign     Pick reviewer(s) via fzf and request review on the PR
   comments   Browse review comments and reply to one via $EDITOR
   update     Fetch trunk, rebase the stack, push, and reconcile PR bases
@@ -189,7 +190,7 @@ Subcommands:
   abandon    Run `pr close` and abandon the PR's revisions
 EOF
     ;;
-  open|status|create|describe|assign|comments|update|push|rebase|merge|cleanup|close|abandon)
+  open|status|create|describe|edit|assign|comments|update|push|rebase|merge|cleanup|close|abandon)
     exec jj "pr-$sub" "$@"
     ;;
   *)
@@ -208,23 +209,61 @@ exec gh pr view --web "$name"
 
 # pr-status: show a summary of the PR for the bookmark closest to @ — title,
 # local vs remote head SHA, change stats, and CI checks (skipped ones omitted).
+# Status indicators match `work`: top-level PR emoji (📝/🔴/📤/🟢/❎/🔁), reviewer
+# state emoji (✅/❌/❓/⊘/⏳), check bucket emoji (✅/🔴/⊘/⏳), and 💬 for threads.
 pr-status = ["util", "exec", "--", "bash", "-c", '''
 set -euo pipefail
 name=$(jj bb | head -n1)
 local_sha=$(jj log --no-graph -r "$name" -T 'commit_id')
-pr_data=$(gh pr view "$name" --json number,title,headRefOid,additions,deletions,changedFiles,reviewRequests,latestReviews)
+pr_data=$(gh pr view "$name" --json number,title,headRefOid,additions,deletions,changedFiles,reviewRequests,latestReviews,isDraft,reviewDecision)
 number=$(jq -r .number <<<"$pr_data")
 title=$(jq -r .title <<<"$pr_data")
 remote_sha=$(jq -r .headRefOid <<<"$pr_data")
 additions=$(jq -r .additions <<<"$pr_data")
 deletions=$(jq -r .deletions <<<"$pr_data")
 changed_files=$(jq -r .changedFiles <<<"$pr_data")
+is_draft=$(jq -r .isDraft <<<"$pr_data")
+review_decision=$(jq -r '.reviewDecision // ""' <<<"$pr_data")
 if [[ "$local_sha" == "$remote_sha" ]]; then
   sync="in sync"
 else
   sync="out of sync"
 fi
-printf 'PR #%s — %s\n\n' "$number" "$title"
+all_json=$(gh pr checks "$name" --json bucket,name 2>/dev/null || true)
+required_json=$(gh pr checks "$name" --required --json name 2>/dev/null || true)
+[[ -z "${all_json:-}" ]] && all_json="[]"
+[[ -z "${required_json:-}" ]] && required_json="[]"
+failing_required=$(jq --argjson req "$required_json" '
+  ($req | map(.name)) as $rn
+  | [.[] | select((.name | IN($rn[])) and (.bucket == "fail" or .bucket == "cancel"))] | length
+' <<<"$all_json")
+pending_required=$(jq --argjson req "$required_json" '
+  ($req | map(.name)) as $rn
+  | [.[] | select((.name | IN($rn[])) and .bucket == "pending")] | length
+' <<<"$all_json")
+rev_count=$(jq '
+  (([.latestReviews[]? | select(.author.login != null)
+    | {(.author.login): (.state // "PENDING")}] | add // {}) as $rev
+  | ([.reviewRequests[]? | (.login // .name // empty) | select(. != "")]) as $req
+  | reduce $req[] as $u ($rev; .[$u] = "pending")
+  | length)
+' <<<"$pr_data")
+if [[ "$is_draft" == "true" ]]; then
+  pr_emoji="📝"
+elif (( failing_required > 0 )); then
+  pr_emoji="🔴"
+elif (( rev_count == 0 )); then
+  pr_emoji="📤"
+elif [[ "$review_decision" == "APPROVED" ]] && (( pending_required == 0 )); then
+  pr_emoji="🟢"
+elif [[ "$review_decision" == "APPROVED" ]]; then
+  pr_emoji="❎"
+elif [[ "$review_decision" == "CHANGES_REQUESTED" ]]; then
+  pr_emoji="🔁"
+else
+  pr_emoji="  "
+fi
+printf '%s  PR #%s — %s\n\n' "$pr_emoji" "$number" "$title"
 printf '  Local:    %s\n' "${local_sha:0:12}"
 printf '  Remote:   %s (%s)\n' "${remote_sha:0:12}" "$sync"
 printf '  Changes:  +%s -%s across %s file(s)\n' "$additions" "$deletions" "$changed_files"
@@ -236,20 +275,28 @@ reviewer_lines=$(jq -r '
     elif . == "approved" then 3
     elif . == "dismissed" then 4
     else 5 end;
+  def state_emoji:
+    if . == "approved" then "✅"
+    elif . == "changes_requested" then "❌"
+    elif . == "commented" then "❓"
+    elif . == "dismissed" then "⊘"
+    elif . == "pending" then "⏳"
+    else "?"
+    end;
   ([.latestReviews[]? | select(.author.login != null)
     | {(.author.login): (.state | ascii_downcase)}] | add // {}) as $rev
   | ([.reviewRequests[]? | (.login // .name // empty) | select(. != "")]) as $req
   | reduce $req[] as $u ($rev; .[$u] = "pending")
   | to_entries
   | sort_by([(.value | rank), .key])
-  | .[] | "\(.value)\t\(.key)"
+  | .[] | "\(.value | state_emoji)\t\(.key)"
 ' <<<"$pr_data")
-printf '\nReviewers:\n'
+printf '\n👥 Reviewers:\n'
 if [[ -z $reviewer_lines ]]; then
   printf '  (none assigned)\n'
 else
-  while IFS=$'\t' read -r state user; do
-    printf '  %-10s %s\n' "$state" "$user"
+  while IFS=$'\t' read -r emoji user; do
+    printf '  %s  %s\n' "$emoji" "$user"
   done <<<"$reviewer_lines"
 fi
 repo_info=$(gh repo view --json owner,name)
@@ -273,15 +320,11 @@ metrics=$(jq -r '
 ' <<<"$threads_json")
 IFS=$'\t' read -r total unresolved no_reply awaiting <<<"$metrics"
 if (( total > 0 )); then
-  printf '\nThreads:\n'
+  printf '\n💬 Threads:\n'
   printf '  Unresolved:        %d / %d\n' "$unresolved" "$total"
   printf '  Without replies:   %d\n' "$no_reply"
   printf '  Awaiting author:   %d\n' "$awaiting"
 fi
-all_json=$(gh pr checks "$name" --json bucket,name 2>/dev/null || true)
-required_json=$(gh pr checks "$name" --required --json name 2>/dev/null || true)
-[[ -z "${all_json:-}" ]] && all_json="[]"
-[[ -z "${required_json:-}" ]] && required_json="[]"
 if [[ "$all_json" != "[]" ]]; then
   partitioned=$(jq -c --argjson req "$required_json" '
     ($req | map(.name)) as $rn
@@ -290,18 +333,27 @@ if [[ "$all_json" != "[]" ]]; then
     | { required: [.[] | select(.name | IN($rn[]))],
         optional: [.[] | select(.name | IN($rn[]) | not)] }
   ' <<<"$all_json")
-  required_lines=$(jq -r '.required[] | "\(.bucket)\t\(.name)"' <<<"$partitioned")
-  optional_lines=$(jq -r '.optional[] | "\(.bucket)\t\(.name)"' <<<"$partitioned")
+  bucket_lines='
+    def bucket_emoji:
+      if . == "pass" then "✅"
+      elif . == "fail" then "🔴"
+      elif . == "cancel" then "⊘"
+      elif . == "pending" then "⏳"
+      else "?"
+      end;
+  '
+  required_lines=$(jq -r "$bucket_lines"'.required[] | "\(.bucket | bucket_emoji)\t\(.name)"' <<<"$partitioned")
+  optional_lines=$(jq -r "$bucket_lines"'.optional[] | "\(.bucket | bucket_emoji)\t\(.name)"' <<<"$partitioned")
   if [[ -n $required_lines ]]; then
     printf '\nRequired:\n'
-    while IFS=$'\t' read -r bucket cname; do
-      printf '  %-8s %s\n' "$bucket" "$cname"
+    while IFS=$'\t' read -r emoji cname; do
+      printf '  %s  %s\n' "$emoji" "$cname"
     done <<<"$required_lines"
   fi
   if [[ -n $optional_lines ]]; then
     printf '\nOptional:\n'
-    while IFS=$'\t' read -r bucket cname; do
-      printf '  %-8s %s\n' "$bucket" "$cname"
+    while IFS=$'\t' read -r emoji cname; do
+      printf '  %s  %s\n' "$emoji" "$cname"
     done <<<"$optional_lines"
   fi
 fi
@@ -428,6 +480,62 @@ if [[ ! -s $output_file ]]; then
 fi
 gh pr edit "$head" --body-file "$output_file"
 ''', "jj-pr-describe"]
+
+# pr-edit: open the PR title and description in $EDITOR, separated by a marker
+# line. On save, the first line becomes the new title and everything below the
+# marker becomes the new body. Aborts if the marker is missing or the title is
+# empty.
+pr-edit = ["util", "exec", "--", "bash", "-c", '''
+set -euo pipefail
+head=$(jj bb | head -n1)
+if ! gh pr view "$head" --json number >/dev/null 2>&1; then
+  echo "no PR found for $head" >&2
+  exit 1
+fi
+pr_data=$(gh pr view "$head" --json title,body)
+title=$(jq -r .title <<<"$pr_data")
+body=$(jq -r .body <<<"$pr_data")
+marker="<!-- ▲ title above · description below ▼ — do not remove this line -->"
+edit_file=$(mktemp -t jj-pr-edit).md
+body_file=$(mktemp -t jj-pr-edit-body).md
+trap 'rm -f "$edit_file" "$body_file"' EXIT
+{
+  printf '%s\n\n' "$title"
+  printf '%s\n\n' "$marker"
+  printf '%s\n' "$body"
+} > "$edit_file"
+orig_hash=$(shasum "$edit_file" | awk '{print $1}')
+"${EDITOR:-vi}" "$edit_file"
+new_hash=$(shasum "$edit_file" | awk '{print $1}')
+if [[ "$orig_hash" == "$new_hash" ]]; then
+  echo "no changes, not updating PR" >&2
+  exit 0
+fi
+if ! grep -qF "$marker" "$edit_file"; then
+  echo "separator line removed, aborting" >&2
+  exit 1
+fi
+pre=$(awk -v m="$marker" '$0 == m {exit} {print}' "$edit_file")
+post=$(awk -v m="$marker" 'found {print} $0 == m {found=1}' "$edit_file")
+new_title=$(printf '%s' "$pre" | awk 'NF {print; exit}')
+if [[ -z $new_title ]]; then
+  echo "empty title, aborting" >&2
+  exit 1
+fi
+extra_title_lines=$(printf '%s' "$pre" | awk -v t="$new_title" '
+  NF && $0 != t { c++ } END { print c+0 }
+')
+if (( extra_title_lines > 0 )); then
+  echo "title must be a single line (found $((extra_title_lines + 1)) non-blank lines above marker)" >&2
+  exit 1
+fi
+new_body=$(printf '%s' "$post" | awk '
+  /^[[:space:]]*$/ { if (started) buffered = buffered "\n"; next }
+  { print buffered $0; buffered=""; started=1 }
+')
+printf '%s' "$new_body" > "$body_file"
+gh pr edit "$head" --title "$new_title" --body-file "$body_file"
+''', "jj-pr-edit"]
 
 # pr-assign: fzf-pick one or more reviewers and request review on the nearest PR.
 # Candidate list is GitHub's suggested reviewers followed by recent commit authors
@@ -687,20 +795,20 @@ fi
 head_sha=$(jj log --no-graph -r "$head" -T 'commit_id')
 # Don't pass --delete-branch: gh's post-merge local-branch cleanup fails with
 # "could not determine current branch" because jj leaves git in detached-HEAD
-# state. pr-cleanup forgets the local bookmark; the remote branch sticks
-# around (GitHub auto-delete-on-merge can clean it up server-side).
+# state. pr-cleanup deletes the remote branch via the GitHub API and forgets
+# the local bookmark.
 gh pr merge "$head" --match-head-commit "$head_sha" --squash "$@"
 jj pr-cleanup
 ''', "jj-pr-merge"]
 
-# pr-cleanup: fetch the latest trunk, forget the merged PR's local bookmark,
-# rebase the stack, and abandon any commits emptied by the squash-merge.
-# Refuses to run if the PR isn't merged yet. Order matters: fetching first lets
-# jj see any remote branch deletion (e.g. from GitHub's auto-delete-branch-on-
-# merge setting) so the subsequent `bookmark forget` doesn't leave an untracked
-# remote ref behind (untracked remotes are in immutable_heads() and would
-# block the rebase). If the remote branch still exists after fetch, the rebase
-# may fail; delete it on GitHub or enable auto-delete-branch-on-merge.
+# pr-cleanup: delete the remote branch, fetch the latest trunk, forget the
+# merged PR's local bookmark, rebase the stack, and abandon any commits
+# emptied by the squash-merge. Refuses to run if the PR isn't merged yet.
+# Order matters: delete the remote branch *before* fetching so the fetch
+# tears down the remote-tracking ref. Otherwise an untracked remote ref
+# lingers, and untracked remotes are in immutable_heads() — which blocks
+# the rebase below. `bookmark forget --include-remotes` is a belt-and-
+# suspenders fallback if the API delete failed (e.g. no permission).
 pr-cleanup = ["util", "exec", "--", "bash", "-c", '''
 set -euo pipefail
 head=$(jj bb | head -n1)
@@ -709,8 +817,10 @@ if [[ "$state" != "MERGED" ]]; then
   printf 'refusing to cleanup: PR for %s is %s, not MERGED\n' "$head" "$state" >&2
   exit 1
 fi
+repo=$(gh repo view --json nameWithOwner -q .nameWithOwner)
+gh api -X DELETE "repos/$repo/git/refs/heads/$head" --silent 2>/dev/null || true
 jj git fetch
-jj bookmark forget "$head" 2>/dev/null || true
+jj bookmark forget --include-remotes "$head" 2>/dev/null || true
 jj rebase -d 'trunk()'
 jj abandon 'trunk()..@ & empty()' 2>/dev/null || true
 ''', "jj-pr-cleanup"]

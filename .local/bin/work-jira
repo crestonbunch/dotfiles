@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+# work jira  → list my To Do / In Progress Jira tickets with a short summary
+#              and a link to each.
+set -euo pipefail
+
+if ! command -v acli >/dev/null 2>&1; then
+  echo "error: acli not found in PATH" >&2
+  exit 1
+fi
+if ! command -v jq >/dev/null 2>&1; then
+  echo "error: jq not found in PATH" >&2
+  exit 1
+fi
+
+JQL='assignee = currentUser() AND statusCategory in ("To Do", "In Progress") ORDER BY updated DESC'
+
+site=$(acli jira auth status 2>/dev/null | awk '/Site:/ {print $2; exit}')
+if [ -z "$site" ]; then
+  echo "error: could not determine Atlassian site — run 'acli jira auth login'" >&2
+  exit 1
+fi
+
+response=$(acli jira workitem search \
+  --jql "$JQL" \
+  --fields "key,summary,status" \
+  --paginate \
+  --json)
+
+if [ -t 1 ]; then
+  B=$'\033[1m'; D=$'\033[2m'; R=$'\033[0m'
+else
+  B=""; D=""; R=""
+fi
+
+echo "$response" | jq -r --arg B "$B" --arg D "$D" --arg R "$R" --arg site "$site" '
+  group_by(.fields.status.statusCategory.name)
+  | sort_by(.[0].fields.status.statusCategory.key)  # "indeterminate" (In Progress) before "new" (To Do)
+  | .[]
+  | "\($B)\(.[0].fields.status.statusCategory.name)\($R)",
+    (.[] | "  \(.key) · \(.fields.status.name) · \(.fields.summary)\n      \($D)https://\($site)/browse/\(.key)\($R)"),
+    ""
+'
