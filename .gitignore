@@ -40,6 +40,12 @@
 !.config/kaisen/
 !.config/kaisen/**/*
 
+# claude
+!.claude/
+!.claude/rules/
+!.claude/rules/personal/
+!.claude/rules/personal/**/*
+
 # scripts
 !.local/
 !.local/bin/
