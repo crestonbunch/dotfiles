@@ -133,6 +133,33 @@ fi
 printf '%s\n' "$out"
 ''', "jj-bb"]
 
+# bbt: like `bb`, but continues down to and including the trunk bookmark, which
+# is pinned at the bottom. Unlike `bb` it never errors on an empty stack. Use
+# where trunk must always appear (e.g. the statusline); `bb` stays the
+# trunk-free list that bm/pr-* consume via `head -n1` and `while read` loops.
+bbt = ["util", "exec", "--", "bash", "-c", '''
+set -euo pipefail
+stack=$(jj log --ignore-working-copy --no-graph \
+  -r "trunk()..@ & bookmarks() & mine()" \
+  -T 'local_bookmarks.map(|b| b.name() ++ "\n").join("")' 2>/dev/null)
+# Prefer a local trunk bookmark; fall back to a remote one (first line dedupes
+# main@git / main@origin) for repos whose trunk is remote-only.
+trunk=$(jj log --ignore-working-copy --no-graph -r 'trunk()' \
+  -T 'local_bookmarks.map(|b| b.name() ++ "\n").join("")' 2>/dev/null)
+trunk=${trunk%%$'\n'*}
+if [[ -z ${trunk:-} ]]; then
+  trunk=$(jj log --ignore-working-copy --no-graph -r 'trunk()' \
+    -T 'remote_bookmarks.map(|b| b.name() ++ "\n").join("")' 2>/dev/null)
+  trunk=${trunk%%$'\n'*}
+fi
+if [[ -n ${stack:-} ]]; then
+  printf '%s\n' "$stack"
+fi
+if [[ -n ${trunk:-} ]]; then
+  printf '%s\n' "$trunk"
+fi
+''', "jj-bbt"]
+
 # bm: bookmark move. Find the closest bookmark in trunk()..@, target @ (or @-
 # if @ is empty), rebase descendants of the bookmark's old position that
 # aren't on the line through the target onto the target, and move the
@@ -162,6 +189,38 @@ if [[ "$old_rev" != "$new_rev" ]]; then
   jj bookmark move "$name" --to "$new_rev" --allow-backwards
 fi
 ''', "jj-bm"]
+
+# bmt: like `bm`, but includes the trunk bookmark as a fallback when there
+# are no stack bookmarks between trunk and @.
+bmt = ["util", "exec", "--", "bash", "-c", '''
+set -euo pipefail
+name=$(jj bbt | head -n1)
+if [[ -z "$name" ]]; then
+  echo "bmt: no bookmark found" >&2
+  exit 1
+fi
+if [[ -n $(jj log --no-graph -r "@ & empty()" -T 'change_id' 2>/dev/null) ]]; then
+  target="@-"
+else
+  target="@"
+fi
+old_rev=$(jj log --no-graph -r "$name" -T 'change_id')
+new_rev=$(jj log --no-graph -r "$target" -T 'change_id')
+if [[ "$old_rev" != "$new_rev" ]]; then
+  descendants=$(jj log --no-graph --ignore-working-copy \
+    -r "roots(((${old_rev}::) ~ ${old_rev}) & ~(::${new_rev}) & ~(${new_rev}::))" \
+    -T 'change_id ++ "\n"' 2>/dev/null)
+  if [[ -n "$descendants" ]]; then
+    rebase_args=()
+    while IFS= read -r rev; do
+      [[ -z "$rev" ]] && continue
+      rebase_args+=(-s "$rev")
+    done <<<"$descendants"
+    jj rebase "${rebase_args[@]}" -d "$new_rev"
+  fi
+  jj bookmark move "$name" --to "$new_rev" --allow-backwards
+fi
+''', "jj-bmt"]
 
 # pr: dispatch to a pr-* subcommand (e.g. `jj pr merge` -> `jj pr-merge`).
 pr = ["util", "exec", "--", "bash", "-c", '''
