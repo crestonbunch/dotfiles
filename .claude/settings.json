@@ -1,0 +1,136 @@
+{
+  "permissions": {
+    "defaultMode": "auto"
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ -x ~/.span/bin/hook-dispatcher ] && ~/.span/bin/hook-dispatcher claude postToolUseEvents || true"
+          }
+        ]
+      }
+    ],
+    "PostToolUseFailure": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ -x ~/.span/bin/hook-dispatcher ] && ~/.span/bin/hook-dispatcher claude postToolUseFailureEvents || true"
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ -x ~/.span/bin/hook-dispatcher ] && ~/.span/bin/hook-dispatcher claude preCompactEventsEnhanced || true"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ -x ~/.span/bin/hook-dispatcher ] && ~/.span/bin/hook-dispatcher claude preToolUseEvents || true"
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ -x ~/.span/bin/hook-dispatcher ] && ~/.span/bin/hook-dispatcher claude sessionEndEvents || true"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ -x ~/.span/bin/hook-dispatcher ] && ~/.span/bin/hook-dispatcher claude stopEventsEnhanced || true"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.local/bin/claude-jj-log log-changes",
+            "async": true,
+            "timeout": 120
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ -x ~/.span/bin/hook-dispatcher ] && ~/.span/bin/hook-dispatcher claude subagentStartEvents || true"
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ -x ~/.span/bin/hook-dispatcher ] && ~/.span/bin/hook-dispatcher claude subagentStopEvents || true"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ -x ~/.span/bin/hook-dispatcher ] && ~/.span/bin/hook-dispatcher claude userPromptSubmitEvents || true"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.local/bin/claude-jj-log log-prompt",
+            "async": true
+          }
+        ]
+      }
+    ]
+  },
+  "statusLine": {
+    "type": "command",
+    "command": "bash ~/.claude/statusline-command.sh"
+  },
+  "enabledPlugins": {
+    "jenkins@duolingo-plugins": true
+  },
+  "extraKnownMarketplaces": {
+    "duolingo-plugins": {
+      "source": {
+        "source": "github",
+        "repo": "duolingo/infra-ai-agent-skills"
+      }
+    }
+  },
+  "effortLevel": "medium",
+  "advisorModel": "opus",
+  "tui": "fullscreen",
+  "skipAutoPermissionPrompt": true,
+  "model": "sonnet"
+}

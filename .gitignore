@@ -47,6 +47,10 @@
 !.claude/rules/personal/**/*
 !.claude/skills/
 !.claude/skills/**/*
+!.claude/settings.json
+!.claude/statusline-command.sh
+!.claude/hooks/
+!.claude/hooks/**/*
 
 # scripts
 !.local/
