@@ -1,0 +1,80 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Re-entrancy guard: if we're already inside a nested claude call from this
+# hook, bail immediately to prevent infinite recursion.
+[ -n "${CLAUDE_JJ_LOG_ACTIVE:-}" ] && exit 0
+
+# Only run inside a jj repo.
+jj root --quiet 2>/dev/null || exit 0
+
+WS_ROOT="$(jj workspace root 2>/dev/null)" || exit 0
+[ -z "$WS_ROOT" ] && exit 0
+
+WS_NAME="$(basename "$WS_ROOT")"
+WS_HASH="$(printf '%s' "$WS_ROOT" | shasum | cut -c1-8)"
+PROJECT_DIR="$HOME/.local/share/claude-logs/${WS_NAME}-${WS_HASH}"
+
+REV_ID="$(jj log --no-graph -r @ -T 'change_id' 2>/dev/null)" || exit 0
+[ -z "$REV_ID" ] && exit 0
+
+mkdir -p "$PROJECT_DIR"
+LOG_FILE="$PROJECT_DIR/$REV_ID.md"
+
+case "${1:-}" in
+  log-prompt)
+    # stdin is the UserPromptSubmit hook JSON.
+    # Extract the user's prompt text — try known field names.
+    INPUT="$(cat)"
+    PROMPT="$(echo "$INPUT" | jq -r '.prompt // .message // .content // empty' 2>/dev/null)" || true
+    [ -z "$PROMPT" ] && exit 0
+
+    {
+      echo ""
+      echo "## User — $(date '+%Y-%m-%d %H:%M:%S')"
+      echo ""
+      echo "$PROMPT"
+    } >> "$LOG_FILE"
+    ;;
+
+  log-changes)
+    DIFF="$(jj diff -r @ --git 2>/dev/null)" || exit 0
+    [ -z "$DIFF" ] && exit 0
+
+    # Gather the last assistant turn from the transcript if available.
+    INPUT="$(cat)"
+    TRANSCRIPT="$(echo "$INPUT" | jq -r '.transcript_path // empty' 2>/dev/null)" || true
+    CONTEXT=""
+    if [ -n "$TRANSCRIPT" ] && [ -f "$TRANSCRIPT" ]; then
+      CONTEXT="$(tail -200 "$TRANSCRIPT" | jq -r 'select(.type == "assistant") | .message // empty' 2>/dev/null | tail -100)" || true
+    fi
+
+    SUMMARY_PROMPT="Summarize the notable DECISIONS and CHOICES in this changeset in 2-4 bullet points. Each bullet can be a short paragraph but keep the overall summary concise. Focus on the why, not the what — the diff is already available separately. Do NOT list files, quote code, or describe what changed line-by-line.
+
+DIFF:
+$DIFF"
+
+    if [ -n "$CONTEXT" ]; then
+      SUMMARY_PROMPT="$SUMMARY_PROMPT
+
+ASSISTANT CONTEXT (reasoning/choices made):
+$CONTEXT"
+    fi
+
+    export CLAUDE_JJ_LOG_ACTIVE=1
+    SUMMARY="$(echo "$SUMMARY_PROMPT" | claude -p --model haiku --settings '{"disableAllHooks":true}' --allowedTools "" --disable-slash-commands 2>/dev/null)" || exit 0
+    [ -z "$SUMMARY" ] && exit 0
+
+    {
+      echo ""
+      echo "## Changes — $(date '+%Y-%m-%d %H:%M:%S')"
+      echo ""
+      echo "$SUMMARY"
+    } >> "$LOG_FILE"
+    ;;
+
+  *)
+    echo "Usage: claude-jj-log {log-prompt|log-changes}" >&2
+    exit 1
+    ;;
+esac

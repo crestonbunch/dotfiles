@@ -1,0 +1,89 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Shared logic for jj cc / jj cd: draft a commit message from the jj diff
+# and any conversation log, open in $EDITOR, then apply.
+#
+# Usage: jj-claude-describe {describe|commit}
+#   describe — jj describe -m <msg>
+#   commit   — jj commit -m <msg>
+
+action="${1:?usage: jj-claude-describe [describe|commit]}"
+
+diff=$(jj diff -r @ --git)
+if [[ -z $diff ]]; then
+  echo "no changes in @" >&2
+  exit 1
+fi
+
+ws_root=$(jj workspace root 2>/dev/null) || ws_root=""
+ws_name="$(basename "$ws_root")"
+ws_hash="$(printf '%s' "$ws_root" | shasum | cut -c1-8)"
+rev_id=$(jj log --no-graph -r @ -T 'change_id')
+log_file="$HOME/.local/share/claude-logs/${ws_name}-${ws_hash}/$rev_id.md"
+
+prompt_file=$(mktemp -t jj-claude-describe-prompt)
+msg_file=$(mktemp -t jj-claude-describe-msg)
+trap 'rm -f "$prompt_file" "$msg_file"' EXIT
+
+{
+cat <<'PROMPT'
+Write a commit message for the following change. Follow these rules exactly:
+
+FORMAT:
+- First line: a short imperative summary of WHAT changed (≤72 chars).
+  Use a capitalized verb: "Add", "Fix", "Refactor", "Remove", etc.
+  No trailing period.
+- If the first line tells the whole story, stop there.
+- Otherwise, add a blank line, then one or more paragraphs explaining
+  WHY this change was made or HOW it works — but only if those details
+  aren't obvious from the diff itself. Wrap every line at 80 characters.
+
+CONTENT GUIDANCE:
+- The first line is the most important part. It should be specific enough
+  that someone scanning `jj log` can understand the change without
+  reading the diff.
+- Don't restate what the diff already shows ("change X from A to B in
+  file F"). Instead, explain the motivation or the effect.
+- Mention non-obvious side effects, tradeoffs, or constraints.
+- If a conversation log is provided below, use it to understand the
+  decisions and reasoning behind the change — but don't quote or
+  reference the conversation itself.
+
+OUTPUT:
+- Output ONLY the commit message. No markdown fences, no preamble.
+PROMPT
+
+if [[ -f $log_file ]]; then
+  echo
+  echo "## Conversation log"
+  echo
+  cat "$log_file"
+fi
+
+echo
+echo "## Diff"
+echo
+echo "$diff"
+} > "$prompt_file"
+
+printf '==> Drafting commit message with Claude (sonnet)...\n' >&2
+claude --model sonnet --print --settings '{"disableAllHooks":true}' < "$prompt_file" > "$msg_file"
+
+"${EDITOR:-vi}" "$msg_file"
+
+if [[ ! -s $msg_file ]]; then
+  echo "empty message, aborting" >&2
+  exit 1
+fi
+
+msg="$(cat "$msg_file")"
+
+if [[ "$action" = "describe" ]]; then
+  jj describe -m "$msg"
+elif [[ "$action" = "commit" ]]; then
+  jj commit -m "$msg"
+else
+  echo "unknown action: $action" >&2
+  exit 1
+fi

@@ -944,3 +944,10 @@ set -euo pipefail
 jj git fetch
 jj new 'trunk()'
 ''', "jj-start"]
+
+# cc: claude commit — draft a commit message with Sonnet from the diff and
+# conversation log, open in $EDITOR, then finalize with `jj commit`.
+cc = ["util", "exec", "--", "bash", "-c", "exec jj-claude-describe \"$1\"", "jj-cc", "commit"]
+
+# cd: claude describe — same as cc but applies with `jj describe` (stays on @).
+cd = ["util", "exec", "--", "bash", "-c", "exec jj-claude-describe \"$1\"", "jj-cd", "describe"]

@@ -45,6 +45,8 @@
 !.claude/rules/
 !.claude/rules/personal/
 !.claude/rules/personal/**/*
+!.claude/skills/
+!.claude/skills/**/*
 
 # scripts
 !.local/
@@ -52,3 +54,5 @@
 !.local/bin/work
 !.local/bin/work-switch
 !.local/bin/work-jira
+!.local/bin/claude-jj-log
+!.local/bin/jj-claude-describe
