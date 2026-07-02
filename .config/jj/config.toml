@@ -452,7 +452,7 @@ if [[ ! -f $prompt_file ]]; then
   echo "missing prompt file: $prompt_file" >&2
   exit 1
 fi
-repo_root=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
+repo_root=$(jj root 2>/dev/null || git rev-parse --show-toplevel 2>/dev/null || pwd)
 template_path=""
 for candidate in \
   .github/PULL_REQUEST_TEMPLATE.md .github/pull_request_template.md \
@@ -503,7 +503,7 @@ if [[ ! -f $prompt_file ]]; then
   echo "missing prompt file: $prompt_file" >&2
   exit 1
 fi
-repo_root=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
+repo_root=$(jj root 2>/dev/null || git rev-parse --show-toplevel 2>/dev/null || pwd)
 template_path=""
 for candidate in \
   .github/PULL_REQUEST_TEMPLATE.md .github/pull_request_template.md \
