@@ -26,3 +26,5 @@ source ~/.secrets.env
 
 # don't commit anything in this file
 source ~/.local.env
+
+alias assume=". assume"
