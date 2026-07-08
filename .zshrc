@@ -37,4 +37,8 @@ zj() {
 autoload -Uz compinit && compinit
 source <(COMPLETE=zsh jj)
 
+if command -v mise >/dev/null 2>&1; then
+  eval "$(mise activate zsh)"
+fi
+
 eval "$(starship init zsh)"
