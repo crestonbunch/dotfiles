@@ -5,3 +5,9 @@
 .classpath
 .settings/
 .factorypath
+
+# mise local config (personal overrides, never committed)
+mise.local.toml
+.mise.local.toml
+mise.*.local.toml
+.mise.*.local.toml

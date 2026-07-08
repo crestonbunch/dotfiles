@@ -15,6 +15,12 @@ command = '''awk -F' *= *' '/^(version_info|version)/ {print $2; exit}' "${VIRTU
 format = 'via [🦄 uv $output]($style) '
 style = "purple bold"
 
+[custom.mise]
+description = "Indicator that a local mise config is active"
+when = 'test -n "$(mise config ls --no-header 2>/dev/null)"'
+format = 'via [󰢛 mise]($style) '
+style = "#ff5f87 bold"
+
 [custom.jj]
 description = "The current jj status"
 when = "jj --ignore-working-copy root"
