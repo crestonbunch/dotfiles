@@ -15,7 +15,12 @@ return {
 		},
 		opts = {
 			sources = { "filesystem", "buffers", "git_status", "neotree_sources.jj_changed" },
+			-- Confirm/rename/create via the cmdline instead of a float. The float
+			-- keeps focus in the tree, so its y/n prompt's <CR> hit the tree's
+			-- "open" mapping instead of the prompt; the cmdline can't be hijacked.
+			use_popups_for_input = false,
 			filesystem = {
+				use_libuv_file_watcher = true, -- Refresh on external changes, not just neo-tree's own edits
 				follow_current_file = {
 					enabled = true, -- Reveal and focus the current file when opening
 					leave_dirs_open = false, -- Close other directories when revealing

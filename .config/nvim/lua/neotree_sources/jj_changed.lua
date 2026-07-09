@@ -7,6 +7,7 @@ local file_items = require("neo-tree.sources.common.file-items")
 local manager = require("neo-tree.sources.manager")
 local common_components = require("neo-tree.sources.common.components")
 local common_commands = require("neo-tree.sources.common.commands")
+local events = require("neo-tree.events")
 local highlights = require("neo-tree.ui.highlights")
 local log = require("neo-tree.log")
 
@@ -74,6 +75,77 @@ local function changed_files(root)
   return changes
 end
 
+local fs_watcher
+local refresh_timer = vim.uv.new_timer()
+
+local function window_open()
+  local state = manager.get_state(M.name)
+  return state ~= nil and renderer.window_exists(state)
+end
+
+local function stop_watch()
+  if fs_watcher then
+    pcall(fs_watcher.stop, fs_watcher)
+    pcall(fs_watcher.close, fs_watcher)
+    fs_watcher = nil
+  end
+end
+
+-- jj snapshots the working copy on every read, including the `jj diff` our own
+-- refresh runs, and that snapshot writes under .jj/. Refreshing on those events
+-- would loop forever, so ignore VCS-internal paths (and nil names, which we
+-- can't classify — the save/focus subscriptions still cover those).
+local function vcs_internal(name)
+  if not name then
+    return true
+  end
+  local p = "/" .. name .. "/"
+  return p:find("/.jj/", 1, true) ~= nil or p:find("/.git/", 1, true) ~= nil
+end
+
+-- Coalesce a burst (a save, or jj rewriting many files) into one re-diff. The
+-- event subscriptions in M.setup share this timer, so an in-nvim save the
+-- watcher and VIM_BUFFER_CHANGED both see still refreshes exactly once. Drops
+-- the watcher once its pane is gone.
+local function schedule_refresh()
+  refresh_timer:stop()
+  refresh_timer:start(
+    200,
+    0,
+    vim.schedule_wrap(function()
+      if window_open() then
+        manager.refresh(M.name)
+      else
+        stop_watch()
+      end
+    end)
+  )
+end
+
+-- Watch the workspace root so external edits and jj operations (from a terminal,
+-- another editor) refresh an open pane, not just in-nvim saves. Recursive is
+-- macOS/Windows-only in libuv; on Linux it degrades to the top level, with the
+-- event subscriptions in M.setup still covering the rest.
+local function start_watch(root)
+  if fs_watcher or not root then
+    return
+  end
+  local w = vim.uv.new_fs_event()
+  if not w then
+    return
+  end
+  local on_event = function(err, name)
+    if not err and not vcs_internal(name) then
+      schedule_refresh()
+    end
+  end
+  if pcall(w.start, w, root, { recursive = true }, on_event) then
+    fs_watcher = w
+  else
+    pcall(w.close, w)
+  end
+end
+
 M.navigate = function(state, path, path_to_reveal, callback, async)
   if state.loading then
     return
@@ -94,6 +166,7 @@ M.navigate = function(state, path, path_to_reveal, callback, async)
 
   state.path = root
   state.jj_revset = revset
+  start_watch(root)
   if path_to_reveal then
     renderer.position.set(state, path_to_reveal)
   end
@@ -181,6 +254,21 @@ M.open = function(rev)
   })
 end
 
-M.setup = function() end
+-- Re-diff whenever the working copy changes: on save (VIM_BUFFER_CHANGED) and
+-- after neo-tree's own file ops. Routed through schedule_refresh so it shares
+-- the watcher's debounce and no-ops when the pane is closed. Neo-tree clears all
+-- subscriptions before re-running source setup, so this can't accumulate
+-- duplicate handlers on reload.
+M.setup = function()
+  for _, event in ipairs({
+    events.VIM_BUFFER_CHANGED,
+    events.FILE_ADDED,
+    events.FILE_DELETED,
+    events.FILE_MOVED,
+    events.FILE_RENAMED,
+  }) do
+    events.subscribe({ event = event, id = "jj_changed." .. event, handler = schedule_refresh })
+  end
+end
 
 return M
