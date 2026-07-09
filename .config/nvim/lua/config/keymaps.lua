@@ -3,6 +3,9 @@
 vim.keymap.set("n", "<leader>..", ":Neotree float reveal<CR>", { desc = "Open all files" })
 vim.keymap.set("n", "<leader>.b", ":Neotree source=buffers float reveal<CR>", { desc = "Open buffers" })
 vim.keymap.set("n", "<leader>.g", ":Neotree source=git_status float reveal<CR>", { desc = "Open gitstatus" })
+vim.keymap.set("n", "<leader>.j", function()
+	require("neotree_sources.jj_changed").open("@")
+end, { desc = "Files changed in jj @" })
 
 -- LSP
 vim.keymap.set("n", "K", "<cmd>Lspsaga hover_doc")

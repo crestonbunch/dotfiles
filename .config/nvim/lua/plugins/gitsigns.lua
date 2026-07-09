@@ -34,6 +34,14 @@ return {
 						return "<Ignore>"
 					end, { expr = true, desc = "Previous git hunk" })
 
+					map("n", "<M-j>", function()
+						gs.next_hunk()
+					end, { desc = "Next git hunk" })
+
+					map("n", "<M-k>", function()
+						gs.prev_hunk()
+					end, { desc = "Previous git hunk" })
+
 					-- Actions
 					map("n", "<leader>hs", gs.stage_hunk, { desc = "Stage hunk" })
 					map("n", "<leader>hr", gs.reset_hunk, { desc = "Reset hunk" })
