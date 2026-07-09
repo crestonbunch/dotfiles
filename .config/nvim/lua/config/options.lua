@@ -31,6 +31,7 @@ vim.opt.updatetime = 300 -- Faster completion
 -- Backups
 vim.opt.backup = false
 vim.opt.writebackup = false
+vim.opt.swapfile = false
 
 -- syntax highlighting
 vim.opt.syntax = "enable"
