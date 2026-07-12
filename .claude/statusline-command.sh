@@ -10,6 +10,10 @@ j() { echo "$input" | jq -r "$1"; }
 model=$(j '.model.display_name // "unknown"')
 used_pct=$(j '.context_window.used_percentage // empty')
 ctx_size=$(j '.context_window.context_window_size // empty')
+rl_5h_pct=$(j '.rate_limits.five_hour.used_percentage // empty')
+rl_7d_pct=$(j '.rate_limits.seven_day.used_percentage // empty')
+rl_5h_reset=$(j '.rate_limits.five_hour.resets_at // empty')
+rl_7d_reset=$(j '.rate_limits.seven_day.resets_at // empty')
 total_in=$(j '.context_window.total_input_tokens // 0')
 total_out=$(j '.context_window.total_output_tokens // 0')
 cost=$(j '.cost.total_cost_usd // empty')
@@ -23,6 +27,9 @@ GL_ADVISOR=$(printf '\xef\x83\xab') # lightbulb  U+F0EB
 GL_EFFORT=$(printf '\xef\x80\x92')  # signal     U+F012
 GL_VIM=$(printf '\xef\x84\x9c')     # keyboard   U+F11C
 GL_CTX=$(printf '\xef\x83\xa4')     # tachometer U+F0E4
+GL_SESSION=$(printf '\xef\x80\x97') # clock      U+F017 (5-hour session limit)
+GL_WEEK=$(printf '\xef\x81\xb3')    # calendar   U+F073 (7-day weekly limit)
+GL_RESET=$(printf '\xef\x80\x9e')   # rotate-right U+F01E (limit reset time)
 GL_DIR=$(printf '\xef\x81\xbb')     # folder     U+F07B
 GL_BRANCH=$(printf '\xee\x82\xa0')  # branch     U+E0A0
 GL_REV=$(printf '\xe2\xac\xa1')     # hexagon    U+2B21 (matches starship jj symbol)
@@ -30,8 +37,8 @@ GL_PR=$(printf '\xef\x82\x9b')      # github     U+F09B
 GL_IN=$(printf '\xef\x82\xab')      # arrow-down U+F0AB
 GL_OUT=$(printf '\xef\x82\xaa')     # arrow-up   U+F0AA
 GL_COST=$(printf '\xef\x85\x95')    # dollar     U+F155
-BLK=$(printf '\xe2\x96\xb0')        # black parallelogram U+25B0
-LT=$(printf '\xe2\x96\xb1')         # white parallelogram U+25B1
+BLK=$(printf '\xe2\x96\xb0')        # black parallelogram U+25B0 (bar filled)
+LT=$(printf '\xe2\x96\xb1')         # white parallelogram U+25B1 (bar empty)
 DOT=$(printf '\xc2\xb7')            # middle dot U+00B7
 
 # ANSI colors — kept sparse so glyphs read as quiet markers. Only the context
@@ -42,21 +49,51 @@ RESET=$(c 0); BOLD=$(c 1); DIM=$(c 2)
 RED=$(c 31); GREEN=$(c 32); YELLOW=$(c 33); ORANGE=$(c '38;5;208'); GRAY=$(c '38;5;244')
 SEP=" ${DIM}${DOT}${RESET} "
 
-# Context: dimmed gauge glyph + colored 10-segment bar + used% + window size
-ctx_seg=""
-BAR_LEN=5
-if [ -n "$used_pct" ] && [ -n "$ctx_size" ]; then
-  pct_int=$(printf '%.0f' "$used_pct")
-  ctx_k=$(echo "$ctx_size" | awk '{printf "%dk", $1/1000}')
-  filled=$(awk -v p="$pct_int" -v n="$BAR_LEN" 'BEGIN{f=int(p/(100/n)+0.5); if(f>n)f=n; if(f<0)f=0; print f}')
+# Colored parallelogram bar: $1 = integer percentage, $2 = segment count. Stays
+# gray at normal usage; only takes on color as it nears the limit.
+mkbar() {
+  p="$1"; n="$2"
+  filled=$(awk -v p="$p" -v n="$n" 'BEGIN{f=int(p/(100/n)+0.5); if(f>n)f=n; if(f<0)f=0; print f}')
   bar=""; i=0
-  while [ "$i" -lt "$BAR_LEN" ]; do
+  while [ "$i" -lt "$n" ]; do
     if [ "$i" -lt "$filled" ]; then bar="${bar}${BLK}"; else bar="${bar}${LT}"; fi
     i=$((i + 1))
   done
-  # Stays gray at normal usage; only calls out attention as it nears the window limit.
-  if [ "$pct_int" -ge 90 ]; then bc=$RED; elif [ "$pct_int" -ge 70 ]; then bc=$ORANGE; else bc=$GRAY; fi
-  ctx_seg="${DIM}${GL_CTX}${RESET} ${bc}${bar}${RESET} ${pct_int}% ${DIM}${ctx_k}${RESET}"
+  if [ "$p" -ge 90 ]; then bc=$RED; elif [ "$p" -ge 70 ]; then bc=$ORANGE; else bc=$GRAY; fi
+  printf '%s%s%s' "$bc" "$bar" "$RESET"
+}
+
+# Context: dimmed gauge glyph + 5-segment bar + used% + window size
+ctx_seg=""
+if [ -n "$used_pct" ] && [ -n "$ctx_size" ]; then
+  pct_int=$(printf '%.0f' "$used_pct")
+  ctx_k=$(echo "$ctx_size" | awk '{printf "%dk", $1/1000}')
+  ctx_seg="${DIM}${GL_CTX}${RESET} $(mkbar "$pct_int" 5) ${pct_int}% ${DIM}${ctx_k}${RESET}"
+fi
+
+# Time until a Unix epoch reset, as a short relative label (45m, 2h, 3d).
+rel_reset() {
+  [ -n "$1" ] || return 0
+  d=$(( $1 - $(date +%s) ))
+  [ "$d" -lt 0 ] && d=0
+  if [ "$d" -ge 86400 ]; then echo "$((d / 86400))d"
+  elif [ "$d" -ge 3600 ]; then echo "$((d / 3600))h"
+  else echo "$(( (d + 59) / 60 ))m"; fi
+}
+
+# Rate-limit gauges: 5-hour session + 7-day weekly usage. Pro/Max only, and each
+# window is independently absent until the first API response, so render per-gauge.
+sess_seg=""
+if [ -n "$rl_5h_pct" ]; then
+  p5=$(printf '%.0f' "$rl_5h_pct")
+  r5=$(rel_reset "$rl_5h_reset")
+  sess_seg="${DIM}${GL_SESSION}${RESET} $(mkbar "$p5" 10) ${p5}%${r5:+ ${DIM}${GL_RESET} ${r5}${RESET}}"
+fi
+week_seg=""
+if [ -n "$rl_7d_pct" ]; then
+  p7=$(printf '%.0f' "$rl_7d_pct")
+  r7=$(rel_reset "$rl_7d_reset")
+  week_seg="${DIM}${GL_WEEK}${RESET} $(mkbar "$p7" 10) ${p7}%${r7:+ ${DIM}${GL_RESET} ${r7}${RESET}}"
 fi
 
 # Token spend
@@ -182,6 +219,7 @@ WIDTH_MARGIN=4
 # the line-2 PR link, since their segments differ in width.
 LINE1_RIGHT_SHIFT=-3
 LINE2_RIGHT_SHIFT=-2
+LINE3_RIGHT_SHIFT=-2
 
 # Line 1: session state on the left, location (dir, branch, rev) pushed to the
 # right edge using COLUMNS (exported by Claude Code v2.1.153+). Falls back to a
@@ -223,4 +261,25 @@ else
   line2=$(join "$line2left" "$line2right")
 fi
 
-printf '%s\n%s' "$line1" "$line2"
+# Line 3: session gauge on the left, weekly gauge pushed to the right edge (same
+# COLUMNS technique as lines 1-2). Omitted entirely when neither window is
+# available (e.g. non-subscriber or before the first API response).
+if [ -z "$sess_seg" ] && [ -z "$week_seg" ]; then
+  line3=""
+elif [ -z "$week_seg" ]; then
+  line3="$sess_seg"
+elif [ -z "$sess_seg" ]; then
+  line3="$week_seg"
+elif [ -n "${COLUMNS:-}" ] && [ "${COLUMNS:-0}" -gt 0 ] 2>/dev/null; then
+  pad=$(( COLUMNS - WIDTH_MARGIN - LINE3_RIGHT_SHIFT - $(vlen "$sess_seg") - $(vlen "$week_seg") - 1 ))
+  [ "$pad" -lt 1 ] && pad=1
+  line3=$(printf '%s%*s%s' "$sess_seg" "$pad" "" "$week_seg")
+else
+  line3=$(join "$sess_seg" "$week_seg")
+fi
+
+if [ -n "$line3" ]; then
+  printf '%s\n%s\n%s' "$line1" "$line2" "$line3"
+else
+  printf '%s\n%s' "$line1" "$line2"
+fi
