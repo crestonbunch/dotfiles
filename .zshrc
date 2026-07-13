@@ -20,11 +20,6 @@ alias gw='git add -i'
 # show my open GitHub PRs grouped by repo
 alias work="$HOME/.local/bin/work"
 
-# Workaround for: https://github.com/NixOS/nix/issues/11805
-if [ -e '/nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh' ]; then
-  . '/nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh'
-fi
-
 # --- Bind Ctrl+G to "edit current command in $EDITOR" ---
 autoload -z edit-command-line
 zle -N edit-command-line
@@ -45,5 +40,9 @@ source <(COMPLETE=zsh jj)
 if command -v mise >/dev/null 2>&1; then
   eval "$(mise activate zsh)"
 fi
+
+# path_helper and mise both assign the scalar PATH, which bypasses the -U flag
+# set in .zshenv; re-assigning the array applies it.
+path=($path)
 
 eval "$(starship init zsh)"

@@ -43,7 +43,8 @@
   },
   "enabledPlugins": {
     "jenkins@duolingo-plugins": true,
-    "rust-analyzer-lsp@claude-plugins-official": true
+    "rust-analyzer-lsp@claude-plugins-official": true,
+    "swift-lsp@claude-plugins-official": true
   },
   "extraKnownMarketplaces": {
     "duolingo-plugins": {
@@ -55,6 +56,6 @@
   },
   "effortLevel": "high",
   "tui": "fullscreen",
-  "skipAutoPermissionPrompt": true,
-  "skipWorkflowUsageWarning": true
+  "skipWorkflowUsageWarning": true,
+  "skipAutoPermissionPrompt": true
 }
