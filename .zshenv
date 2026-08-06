@@ -37,3 +37,5 @@ source ~/.secrets.env
 source ~/.local.env
 
 alias assume=". assume"
+
+export ZELLIJ_SOCKET_DIR=/tmp/zellij

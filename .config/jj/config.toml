@@ -58,9 +58,10 @@ log = "present(@) | ancestors((mine() ~ ::trunk()) | @, 2) | present(trunk())"
 # revisions are elided (shown as `~`).
 lob = ["log", "-r", "bookmarks()"]
 
-# Run pre-commit on files changed in a revset (default: @). Auto-fixes are
-# captured in a new revision on top of @ and then `jj absorb`ed back into the
-# nearest mutable revisions; the scratch revision is abandoned if empty.
+# Run pre-commit on files changed in a revset (default: @). Auto-fixes land in
+# their own revision on top of @ — never absorbed or squashed back into the
+# revisions that introduced them — and the scratch revision is abandoned if
+# pre-commit changed nothing.
 #   jj precommit                       # check current change
 #   jj precommit 'trunk()..@'          # check whole stack
 precommit = ["util", "exec", "--", "sh", "-c", '''
@@ -71,23 +72,27 @@ if [ -z "$files" ]; then
   echo "No files changed in $revset"
   exit 0
 fi
-parent_change=$(jj log --no-graph -r '@' -T 'change_id')
-jj new
+start_change=$(jj log --no-graph -r '@' -T 'change_id')
+# An already-empty @ is a usable scratch; only stack a new one onto real work.
+if [ -n "$(jj log --no-graph -r '@ & ~empty()' -T 'change_id' 2>/dev/null)" ]; then
+  jj new
+fi
 status=0
 pre-commit run --files $files || status=$?
-jj absorb
-# If the scratch is still empty, move @ back to the original change. `jj edit`
-# auto-abandons the empty scratch (no descendants, no bookmarks). Don't use
-# `jj abandon` here — abandoning @ always synthesizes a new wc on the parent.
-if [ -z "$(jj log --no-graph -r '@ & ~empty()' -T 'change_id' 2>/dev/null)" ]; then
-  jj edit "$parent_change"
+if [ -n "$(jj log --no-graph -r '@ & ~empty()' -T 'change_id' 2>/dev/null)" ]; then
+  if [ -z "$(jj log --no-graph -r '@' -T 'description')" ]; then
+    jj describe -m 'Apply pre-commit fixes'
+  fi
+elif [ "$(jj log --no-graph -r '@' -T 'change_id')" != "$start_change" ]; then
+  # `jj edit` auto-abandons the empty scratch (no descendants, no bookmarks).
+  # Don't use `jj abandon` here — abandoning @ always synthesizes a new wc on
+  # the parent.
+  jj edit "$start_change"
 fi
 # A non-zero first run can mean either auto-fixes were applied or there are
-# unfixable issues. Re-run on the absorbed state to distinguish: a clean
-# second run means everything was auto-fixed, so treat it as success.
+# unfixable issues. Re-run over the same files to distinguish: a clean second
+# run means everything was auto-fixed, so treat it as success.
 if [ "$status" -ne 0 ]; then
-  files=$(jj diff --name-only -r "$revset")
-  [ -z "$files" ] && exit 0
   pre-commit run --files $files
 fi
 ''', "jj-precommit"]
@@ -785,6 +790,8 @@ jj pr-rebase
 ''', "jj-pr-update"]
 
 # pr-push: run pre-commit on the stack and push every bookmark in trunk()..@.
+# `jj precommit` leaves auto-fixes in a revision on top of @, so the nearest
+# bookmark has to be advanced onto it or the fixes never reach the remote.
 pr-push = ["util", "exec", "--", "bash", "-c", '''
 set -euo pipefail
 bookmarks=()
@@ -794,7 +801,21 @@ done < <(jj bb)
 if [[ ${#bookmarks[@]} -eq 0 ]]; then
   exit 1
 fi
+tip() {
+  local rev
+  rev=$(jj log --no-graph -r '@ & ~empty()' -T 'change_id' 2>/dev/null || true)
+  [[ -z $rev ]] && rev=$(jj log --no-graph -r '@-' -T 'change_id')
+  printf '%s' "$rev"
+}
+nearest=$(jj log --no-graph -r "${bookmarks[0]}" -T 'change_id')
+tip_before=$(tip)
 jj precommit 'trunk()..@'
+if [[ "$nearest" == "$tip_before" ]]; then
+  jj bm
+elif [[ "$(tip)" != "$tip_before" ]]; then
+  printf 'warning: pre-commit fixes are not covered by %s and will not be pushed\n' \
+    "${bookmarks[0]}" >&2
+fi
 push_args=()
 for b in "${bookmarks[@]}"; do
   push_args+=(--bookmark "$b")
