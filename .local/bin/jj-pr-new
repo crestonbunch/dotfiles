@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Open one GitHub PR for a bookmark. Shared by jj pr create and jj stack create.
+#
+# Usage: jj-pr-new <head-bookmark> <base-branch> <diff-from-rev> [gh args...]
+#   The title is the first description line of the newest real revision in the
+#   PR range. The body is drafted by jj-pr-body from the <diff-from-rev>..<head>
+#   diff. Extra args go to `gh pr create`.
+
+head="${1:?usage: jj-pr-new <head-bookmark> <base-branch> <diff-from-rev> [gh args...]}"
+base="${2:?missing base branch}"
+from="${3:?missing diff-from revision}"
+shift 3
+
+# A bookmark parked on a pre-commit fixup would otherwise title its PR
+# "Apply pre-commit fixes", so skip the fixups and read the revision that names
+# the branch.
+fixups='description(glob:"Apply pre-commit fixes*")'
+title=$(jj log --no-graph --ignore-working-copy \
+  -r "latest((${from}..${head}) & ~empty() & ~${fixups}, 1)" \
+  -T 'description.first_line()' 2>/dev/null) || title=""
+if [[ -z $title ]]; then
+  title=$(jj log --no-graph --ignore-working-copy -r "$head" -T 'description.first_line()')
+fi
+if [[ -z $title ]]; then
+  printf 'the revision for %s has no description\n' "$head" >&2
+  exit 1
+fi
+
+tmpdir=$(mktemp -d -t jj-pr-new)
+trap 'rm -rf "$tmpdir"' EXIT
+body_file="$tmpdir/body.md"
+
+jj-pr-body "$body_file" jj diff --from "$from" --to "$head" --git
+gh pr create --head "$head" --base "$base" --title "$title" --body-file "$body_file" "$@"

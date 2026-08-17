@@ -60,3 +60,5 @@
 !.local/bin/work-jira
 !.local/bin/claude-jj-log
 !.local/bin/jj-claude-describe
+!.local/bin/jj-pr-body
+!.local/bin/jj-pr-new

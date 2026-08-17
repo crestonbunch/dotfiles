@@ -165,6 +165,34 @@ if [[ -n ${trunk:-} ]]; then
 fi
 ''', "jj-bbt"]
 
+# bs: bookmark stack. List local bookmarks in the whole stack that holds @,
+# bottom first (closest to trunk). `bb` stops at @, so a bookmark above @ is
+# invisible to it. `bs` walks up to the head above @ too, which is what the PR
+# aliases need: a PR created on a middle bookmark must still see the PRs
+# stacked above it. If @ has more than one descendant head, the stack above @
+# is ambiguous, so `bs` falls back to the `bb` scope and warns.
+bs = ["util", "exec", "--", "bash", "-c", '''
+set -euo pipefail
+heads=$(jj log --ignore-working-copy --no-graph -r 'heads(@::)' \
+  -T 'change_id ++ "\n"' 2>/dev/null | awk 'NF')
+count=$(printf '%s\n' "$heads" | awk 'NF' | wc -l | tr -d ' ')
+if [[ $count -eq 1 ]]; then
+  top="$heads"
+else
+  printf 'bs: @ has %s descendant heads, limiting the stack to trunk()..@\n' "$count" >&2
+  top='@'
+fi
+out=$(jj log --ignore-working-copy --no-graph \
+  -r "trunk()..($top) & bookmarks() & mine()" \
+  -T 'local_bookmarks.map(|b| b.name() ++ "\n").join("")' 2>/dev/null \
+  | awk 'NF { lines[++n] = $0 } END { for (i = n; i > 0; i--) print lines[i] }')
+if [[ -z ${out:-} ]]; then
+  echo "no bookmark found in the stack" >&2
+  exit 1
+fi
+printf '%s\n' "$out"
+''', "jj-bs"]
+
 # bm: bookmark move. Find the closest bookmark in trunk()..@, target @ (or @-
 # if @ is empty), rebase descendants of the bookmark's old position that
 # aren't on the line through the target onto the target, and move the
@@ -245,13 +273,13 @@ Subcommands:
   edit       Edit the PR title and description in \$EDITOR
   assign     Pick reviewer(s) via fzf and request review on the PR
   comments   Browse review comments and reply to one via $EDITOR
-  update     Fetch trunk, rebase the stack, push, and reconcile PR bases
+  update     Fetch trunk, rebase the stack, push, and sync the PRs
   push       Run pre-commit on the stack and push every bookmark
   rebase     Reconcile each open PR base to match the current stack
   merge      Merge the nearest bookmark PR (with safety checks)
   cleanup    After a merge, forget the local bookmark and rebase onto trunk
   close      Close the nearest bookmark PR and forget the local bookmark
-  abandon    Run `pr close` and abandon the PR's revisions
+  abandon    Run \`pr close\` and abandon the PR's revisions
 EOF
     ;;
   open|status|create|describe|edit|assign|comments|update|push|rebase|merge|cleanup|close|abandon)
@@ -428,6 +456,12 @@ fi
 # the head commit's first description line; body is drafted by Claude (sonnet)
 # from the base..head diff and opened in $EDITOR for review before posting.
 # Extra args are forwarded to `gh pr create`.
+#
+# A bookmark that already has an open PR is left alone, so this is safe to run
+# inside a half-published stack. When the stack holds more than one bookmark,
+# the PR joins a GitHub stack: `pr-rebase` chains the bases and `stack-link`
+# links the PRs. That covers a PR created in the middle or at the bottom of an
+# existing stack, where the PRs above it have to be retargeted onto the new one.
 pr-create = ["util", "exec", "--", "bash", "-c", '''
 set -euo pipefail
 bookmarks=()
@@ -445,53 +479,28 @@ else
   base=$(gh repo view --json defaultBranchRef -q .defaultBranchRef.name)
   diff_base="trunk()"
 fi
-title=$(jj log --no-graph -r "$head" -T 'description.first_line()')
-printf '==> Pushing stack\n' >&2
-jj pr-push
-if [[ -z $title ]]; then
+if ! existing=$(gh pr list --head "$head" --state open --json number --jq '.[0].number // empty'); then
+  printf 'gh pr list failed for %s; not guessing whether a PR exists\n' "$head" >&2
+  exit 1
+fi
+if [[ -n $existing ]]; then
+  printf '==> PR #%s already covers %s, syncing instead of creating\n' "$existing" "$head" >&2
+elif [[ -z $(jj log --no-graph -r "$head" -T 'description.first_line()') ]]; then
   echo "head commit has no description" >&2
   exit 1
 fi
-prompt_file="$HOME/.config/jj/PR_DESCRIBE_PROMPT.md"
-if [[ ! -f $prompt_file ]]; then
-  echo "missing prompt file: $prompt_file" >&2
-  exit 1
+printf '\n==> Pushing stack\n' >&2
+jj pr-push
+if [[ -z $existing ]]; then
+  printf '\n==> Creating PR for %s (base %s)\n' "$head" "$base" >&2
+  jj-pr-new "$head" "$base" "$diff_base" "$@"
 fi
-repo_root=$(jj root 2>/dev/null || git rev-parse --show-toplevel 2>/dev/null || pwd)
-template_path=""
-for candidate in \
-  .github/PULL_REQUEST_TEMPLATE.md .github/pull_request_template.md \
-  PULL_REQUEST_TEMPLATE.md pull_request_template.md \
-  docs/PULL_REQUEST_TEMPLATE.md docs/pull_request_template.md; do
-  if [[ -f "$repo_root/$candidate" ]]; then
-    template_path="$repo_root/$candidate"
-    break
-  fi
-done
-prompt_input=$(mktemp -t jj-pr-create-prompt)
-body_file=$(mktemp -t jj-pr-create).md
-trap 'rm -f "$prompt_input" "$body_file"' EXIT
-{
-  cat "$prompt_file"
-  echo
-  if [[ -n $template_path ]]; then
-    echo "## GitHub PR template"
-    echo
-    cat "$template_path"
-    echo
-  fi
-  echo "## Git diff"
-  echo
-  jj diff --from "$diff_base" --to "$head" --git
-} > "$prompt_input"
-echo "==> Drafting description with Claude (sonnet)..." >&2
-claude --model sonnet --print "$(cat "$prompt_input")" > "$body_file"
-"${EDITOR:-vi}" "$body_file"
-if [[ ! -s $body_file ]]; then
-  echo "empty description, not creating PR" >&2
-  exit 1
+if (( $(jj bs | wc -l | tr -d ' ') > 1 )); then
+  printf '\n==> Reconciling PR bases\n' >&2
+  jj pr-rebase
+  printf '\n==> Syncing GitHub stack\n' >&2
+  jj stack-link
 fi
-exec gh pr create --head "$head" --base "$base" --title "$title" --body-file "$body_file" "$@"
 ''', "jj-pr-create"]
 
 # pr-describe: draft a PR description with Claude (sonnet), open it in $EDITOR
@@ -503,46 +512,11 @@ if ! gh pr view "$head" --json number >/dev/null 2>&1; then
   echo "no PR found for $head" >&2
   exit 1
 fi
-prompt_file="$HOME/.config/jj/PR_DESCRIBE_PROMPT.md"
-if [[ ! -f $prompt_file ]]; then
-  echo "missing prompt file: $prompt_file" >&2
-  exit 1
-fi
-repo_root=$(jj root 2>/dev/null || git rev-parse --show-toplevel 2>/dev/null || pwd)
-template_path=""
-for candidate in \
-  .github/PULL_REQUEST_TEMPLATE.md .github/pull_request_template.md \
-  PULL_REQUEST_TEMPLATE.md pull_request_template.md \
-  docs/PULL_REQUEST_TEMPLATE.md docs/pull_request_template.md; do
-  if [[ -f "$repo_root/$candidate" ]]; then
-    template_path="$repo_root/$candidate"
-    break
-  fi
-done
-prompt_input=$(mktemp -t jj-pr-describe-prompt)
-output_file=$(mktemp -t jj-pr-describe).md
-trap 'rm -f "$prompt_input" "$output_file"' EXIT
-{
-  cat "$prompt_file"
-  echo
-  if [[ -n $template_path ]]; then
-    echo "## GitHub PR template"
-    echo
-    cat "$template_path"
-    echo
-  fi
-  echo "## Git diff"
-  echo
-  gh pr diff "$head"
-} > "$prompt_input"
-echo "==> Drafting description with Claude (sonnet)..." >&2
-claude --model sonnet --print "$(cat "$prompt_input")" > "$output_file"
-"${EDITOR:-vi}" "$output_file"
-if [[ ! -s $output_file ]]; then
-  echo "empty description, not updating PR" >&2
-  exit 1
-fi
-gh pr edit "$head" --body-file "$output_file"
+tmpdir=$(mktemp -d -t jj-pr-describe)
+trap 'rm -rf "$tmpdir"' EXIT
+body_file="$tmpdir/body.md"
+jj-pr-body "$body_file" gh pr diff "$head"
+gh pr edit "$head" --body-file "$body_file"
 ''', "jj-pr-describe"]
 
 # pr-edit: open the PR title and description in $EDITOR, separated by a marker
@@ -776,7 +750,9 @@ case "$sel_id" in
 esac
 ''', "jj-pr-comments"]
 
-# pr-update: fetch trunk, rebase the stack onto it, push, and reconcile PR bases.
+# pr-update: fetch trunk, rebase the stack onto it, push, reconcile PR bases,
+# and sync the GitHub stack. It never opens a PR. Use `jj stack update` for
+# the same pass plus a PR for every bookmark that lacks one.
 pr-update = ["util", "exec", "--", "bash", "-c", '''
 set -euo pipefail
 printf '==> Fetching from remote\n'
@@ -787,62 +763,126 @@ printf '\n==> Pushing stack\n'
 jj pr-push
 printf '\n==> Reconciling PR bases\n'
 jj pr-rebase
+printf '\n==> Syncing GitHub stack\n'
+jj stack-link
 ''', "jj-pr-update"]
 
-# pr-push: run pre-commit on the stack and push every bookmark in trunk()..@.
+# pr-push: run pre-commit on the stack and push every bookmark in the stack.
 # `jj precommit` leaves auto-fixes in a revision on top of @, so the nearest
 # bookmark has to be advanced onto it or the fixes never reach the remote.
+# The push covers `jj bs`, not `jj bb`: `jj rebase -d trunk()` moves the
+# revisions above @ as well, and their bookmarks must reach the remote too or
+# the stacked PRs above @ keep pointing at stale commits.
 pr-push = ["util", "exec", "--", "bash", "-c", '''
 set -euo pipefail
-bookmarks=()
-while IFS= read -r line; do
-  bookmarks+=("$line")
-done < <(jj bb)
-if [[ ${#bookmarks[@]} -eq 0 ]]; then
-  exit 1
-fi
+nearest_name=$(jj bb | head -n1)
 tip() {
   local rev
   rev=$(jj log --no-graph -r '@ & ~empty()' -T 'change_id' 2>/dev/null || true)
   [[ -z $rev ]] && rev=$(jj log --no-graph -r '@-' -T 'change_id')
   printf '%s' "$rev"
 }
-nearest=$(jj log --no-graph -r "${bookmarks[0]}" -T 'change_id')
+nearest=$(jj log --no-graph -r "$nearest_name" -T 'change_id')
 tip_before=$(tip)
 jj precommit 'trunk()..@'
 if [[ "$nearest" == "$tip_before" ]]; then
   jj bm
 elif [[ "$(tip)" != "$tip_before" ]]; then
   printf 'warning: pre-commit fixes are not covered by %s and will not be pushed\n' \
-    "${bookmarks[0]}" >&2
+    "$nearest_name" >&2
 fi
+push_args=()
+while IFS= read -r b; do
+  push_args+=(--bookmark "$b")
+done < <(jj bs)
+if [[ ${#push_args[@]} -eq 0 ]]; then
+  exit 1
+fi
+jj git push "${push_args[@]}"
+''', "jj-pr-push"]
+
+# stack-push: run pre-commit once per bookmark, bottom first, then push every
+# bookmark in the stack. Each bookmark is linted over its own PR diff
+# (<bookmark below>..<bookmark>), so a fix lands in the PR that introduced the
+# file instead of at the top of the stack, which is where a single
+# `trunk()..@` pass puts every fix.
+#
+# `jj precommit` leaves a fix in a new revision on top of @, so this moves the
+# bookmark being pushed onto that revision with `jj bm`, which also rebases the
+# rest of the stack onto it. Without the move the fix stays outside the PR and
+# never reaches the remote. The bookmark moves only when pre-commit actually
+# left a revision behind: `jj bm` targets `@-` when @ is empty, so calling it
+# unconditionally would drag a bookmark on an empty revision backwards.
+#
+# @ returns to where it started. An empty @ on top of the stack is abandoned by
+# the first `jj edit`, so it is recreated on top instead.
+stack-push = ["util", "exec", "--", "bash", "-c", '''
+set -euo pipefail
+bookmarks=()
+while IFS= read -r line; do
+  bookmarks+=("$line")
+done < <(jj bs)
+if [[ ${#bookmarks[@]} -eq 0 ]]; then
+  exit 1
+fi
+top="${bookmarks[${#bookmarks[@]} - 1]}"
+start=$(jj log --no-graph -r '@' -T 'change_id')
+restore() {
+  if [[ -n $(jj log --no-graph -r "$start" -T 'change_id' 2>/dev/null) ]]; then
+    jj edit "$start"
+  else
+    jj new "$top"
+  fi
+}
+trap restore EXIT
+for i in "${!bookmarks[@]}"; do
+  b="${bookmarks[i]}"
+  if (( i == 0 )); then
+    from='trunk()'
+  else
+    from="${bookmarks[i-1]}"
+  fi
+  printf '\n==> pre-commit for %s\n' "$b"
+  jj edit "$b"
+  jj precommit "${from}..${b}"
+  if [[ "$(jj log --no-graph -r '@' -T 'change_id')" \
+     != "$(jj log --no-graph -r "$b" -T 'change_id')" ]]; then
+    printf '==> moving %s onto the pre-commit fixes\n' "$b"
+    jj bm
+  fi
+done
 push_args=()
 for b in "${bookmarks[@]}"; do
   push_args+=(--bookmark "$b")
 done
+printf '\n==> Pushing %s bookmark(s)\n' "${#bookmarks[@]}"
 jj git push "${push_args[@]}"
-''', "jj-pr-push"]
+''', "jj-stack-push"]
 
-# pr-rebase: reconcile each open PR's base to match the current stack
-# ordering (next-nearest bookmark, or repo default for the bottom of the stack).
+# pr-rebase: reconcile each open PR's base to match the current stack ordering
+# (the bookmark below it, or the repo default for the bottom of the stack).
+# Walks `jj bs`, so a PR above @ is retargeted too.
 pr-rebase = ["util", "exec", "--", "bash", "-c", '''
 set -euo pipefail
 bookmarks=()
 while IFS= read -r line; do
   bookmarks+=("$line")
-done < <(jj bb)
+done < <(jj bs)
 if [[ ${#bookmarks[@]} -eq 0 ]]; then
   exit 1
 fi
 default_branch=$(gh repo view --json defaultBranchRef -q .defaultBranchRef.name)
 for i in "${!bookmarks[@]}"; do
   head="${bookmarks[i]}"
-  if (( i + 1 < ${#bookmarks[@]} )); then
-    expected_base="${bookmarks[i+1]}"
-  else
+  if (( i == 0 )); then
     expected_base="$default_branch"
+  else
+    expected_base="${bookmarks[i-1]}"
   fi
-  current_base=$(gh pr list --head "$head" --state open --json baseRefName --jq '.[0].baseRefName // empty')
+  if ! current_base=$(gh pr list --head "$head" --state open --json baseRefName --jq '.[0].baseRefName // empty'); then
+    printf 'gh pr list failed for %s; not guessing whether a PR exists\n' "$head" >&2
+    exit 1
+  fi
   if [[ -z $current_base ]]; then
     continue
   fi
@@ -852,6 +892,388 @@ for i in "${!bookmarks[@]}"; do
   fi
 done
 ''', "jj-pr-rebase"]
+
+# stack: dispatch to a stack-* subcommand (e.g. `jj stack create` ->
+# `jj stack-create`). The `pr-*` aliases act on the nearest bookmark; the
+# `stack-*` aliases act on every bookmark between trunk and the top of the
+# stack.
+stack = ["util", "exec", "--", "bash", "-c", '''
+set -euo pipefail
+sub="${1:-help}"
+shift || true
+case "$sub" in
+  help|-h|--help)
+    cat <<EOF
+jj stack <subcommand> [args]
+
+Subcommands:
+  create   Open a PR for every bookmark in the stack that has none, then sync
+  update   Fetch trunk and rebase the stack, then run \`stack create\`
+  push     Run pre-commit per bookmark, then push every bookmark
+  link     Link the open PRs in the stack into a GitHub stacked PR
+  merge    Check the whole stack, then merge it atomically on GitHub
+EOF
+    ;;
+  create|update|push|link|merge)
+    exec jj "stack-$sub" "$@"
+    ;;
+  *)
+    echo "jj stack: unknown subcommand: $sub" >&2
+    exit 1
+    ;;
+esac
+''', "jj-stack"]
+
+# stack-create: open a PR for every bookmark between trunk and the top of the
+# stack that does not have one yet, bottom first, then reconcile the bases and
+# link the stack. A bookmark that already has an open PR is skipped, so this
+# fills the gaps in a half-published stack and is safe to re-run. Extra args go
+# to every `gh pr create` it runs (e.g. `--draft`).
+#
+# The push goes through `stack-push`, which lints each bookmark over its own PR
+# diff and moves that bookmark onto its own pre-commit fixes. So the PRs are
+# created after every fix is in place, and each PR carries its own fixes.
+#
+# Each new PR costs one Claude draft and one $EDITOR pass, in stack order.
+stack-create = ["util", "exec", "--", "bash", "-c", '''
+set -euo pipefail
+bookmarks=()
+while IFS= read -r line; do
+  bookmarks+=("$line")
+done < <(jj bs)
+if [[ ${#bookmarks[@]} -eq 0 ]]; then
+  exit 1
+fi
+default_branch=$(gh repo view --json defaultBranchRef -q .defaultBranchRef.name)
+needs=()
+todo=0
+for i in "${!bookmarks[@]}"; do
+  b="${bookmarks[i]}"
+  if ! pr=$(gh pr list --head "$b" --state open --json number --jq '.[0].number // empty'); then
+    printf 'gh pr list failed for %s; not guessing whether a PR exists\n' "$b" >&2
+    exit 1
+  fi
+  if [[ -n $pr ]]; then
+    needs[i]=0
+    continue
+  fi
+  if [[ -z $(jj log --no-graph -r "$b" -T 'description.first_line()') ]]; then
+    printf 'the revision for %s has no description; describe it first\n' "$b" >&2
+    exit 1
+  fi
+  needs[i]=1
+  todo=$((todo + 1))
+done
+if (( todo == 0 )); then
+  printf '==> Every bookmark in the stack already has a PR\n'
+else
+  printf '==> Opening %s new PR(s)\n' "$todo"
+fi
+jj stack-push
+n=0
+for i in "${!bookmarks[@]}"; do
+  if [[ "${needs[i]}" -eq 0 ]]; then
+    continue
+  fi
+  b="${bookmarks[i]}"
+  if (( i == 0 )); then
+    base="$default_branch"
+    from='trunk()'
+  else
+    base="${bookmarks[i-1]}"
+    from="$base"
+  fi
+  n=$((n + 1))
+  printf '\n==> [%s/%s] Creating PR for %s (base %s)\n' "$n" "$todo" "$b" "$base"
+  jj-pr-new "$b" "$base" "$from" "$@"
+done
+printf '\n==> Reconciling PR bases\n'
+jj pr-rebase
+printf '\n==> Syncing GitHub stack\n'
+jj stack-link
+''', "jj-stack-create"]
+
+# stack-update: fetch trunk and rebase the stack onto it, then run
+# `stack-create`. This is `pr-update` plus a PR for every bookmark that lacks
+# one, so it is the one command that takes a stack of bookmarks all the way to
+# a stack of open PRs and keeps it current.
+stack-update = ["util", "exec", "--", "bash", "-c", '''
+set -euo pipefail
+printf '==> Fetching from remote\n'
+jj git fetch
+printf '\n==> Rebasing stack onto trunk\n'
+jj rebase -d 'trunk()'
+jj stack-create "$@"
+''', "jj-stack-update"]
+
+# stack-link: link every open PR in the stack into a GitHub stacked PR, ordered
+# bottom to top. A bookmark without a PR is skipped, so a half-published stack
+# still links the PRs that do exist. Run `jj pr rebase` first (or use `jj pr
+# update`, which does both): GitHub builds the stack from the PR base chain.
+#
+# The REST API can only append to the top of a stack. Any other change to the
+# order (a PR inserted in the middle or at the bottom, a bookmark reordered) is
+# applied by unstacking and recreating the stack with the full list. GitHub
+# refuses to unstack a PR that is queued for merge or has auto-merge enabled,
+# which makes the recreate fail. Unstack that PR by hand first.
+stack-link = ["util", "exec", "--", "bash", "-c", '''
+set -euo pipefail
+repo=$(gh repo view --json nameWithOwner -q .nameWithOwner)
+if ! gh api "repos/$repo/stacks" >/dev/null 2>&1; then
+  printf 'stacked PRs are not available for %s, skipping\n' "$repo"
+  exit 0
+fi
+prs=()
+while IFS= read -r b; do
+  if ! n=$(gh pr list --head "$b" --state open --json number --jq '.[0].number // empty'); then
+    printf 'gh pr list failed for %s; not rebuilding the stack from a partial list\n' "$b" >&2
+    exit 1
+  fi
+  if [[ -n $n ]]; then
+    prs+=("$n")
+  fi
+done < <(jj bs)
+if [[ ${#prs[@]} -lt 2 ]]; then
+  printf 'nothing to stack: %s open PR(s) in the stack\n' "${#prs[@]}"
+  exit 0
+fi
+desired=$(printf '%s\n' "${prs[@]}")
+create_stack() {
+  local out
+  out=$(printf '%s\n' "${prs[@]}" \
+    | jq -Rn '[inputs | select(length > 0) | tonumber] | {pull_requests: .}' \
+    | gh api -X POST "repos/$repo/stacks" --input - --jq '"#\(.number) \(.url)"')
+  printf 'stacked %s PRs (%s): %s\n' "${#prs[@]}" "$(paste -sd, - <<<"$desired")" "$out"
+}
+if ! found=$(for n in "${prs[@]}"; do
+  gh api "repos/$repo/stacks?pull_request=$n" --jq '.[] | select(.open != false) | .number'
+done | awk 'NF' | sort -un); then
+  printf 'gh api failed while looking up the stack; not rebuilding it from a partial list\n' >&2
+  exit 1
+fi
+case $(printf '%s\n' "$found" | awk 'NF' | wc -l | tr -d ' ') in
+  0)
+    create_stack
+    exit 0
+    ;;
+  1) ;;
+  *)
+    printf 'these PRs belong to more than one GitHub stack (%s); unstack them first\n' \
+      "$(paste -sd, - <<<"$found")" >&2
+    exit 1
+    ;;
+esac
+stack=$(printf '%s\n' "$found" | awk 'NF' | head -n1)
+existing=$(gh api "repos/$repo/stacks/$stack" \
+  --jq '.pull_requests[] | select(.merged_at == null and .state == "open") | .number' \
+  | awk 'NF')
+if [[ "$existing" == "$desired" ]]; then
+  printf 'stack #%s is already up to date\n' "$stack"
+  exit 0
+fi
+existing_count=$(printf '%s\n' "$existing" | awk 'NF' | wc -l | tr -d ' ')
+if (( existing_count > 0 )) \
+  && [[ "$existing" == "$(printf '%s\n' "${prs[@]}" | head -n "$existing_count")" ]]; then
+  add=$(printf '%s\n' "${prs[@]}" | tail -n "+$((existing_count + 1))")
+  printf '%s\n' "$add" \
+    | jq -Rn '[inputs | select(length > 0) | tonumber] | {pull_requests: .}' \
+    | gh api -X POST "repos/$repo/stacks/$stack/add" --input - >/dev/null
+  printf 'added PR(s) %s to the top of stack #%s\n' "$(paste -sd, - <<<"$add")" "$stack"
+  exit 0
+fi
+printf 'rebuilding stack #%s: %s -> %s\n' \
+  "$stack" "$(paste -sd, - <<<"$existing")" "$(paste -sd, - <<<"$desired")"
+gh api -X POST "repos/$repo/stacks/$stack/unstack" >/dev/null
+if ! create_stack; then
+  printf 'failed to rebuild stack #%s; some of its PRs may still be stacked\n' "$stack" >&2
+  exit 1
+fi
+''', "jj-stack-link"]
+
+# stack-merge: merge the whole stack. Every bookmark is checked before anything
+# merges, and every blocker is reported at once. A PR must be open, non-draft,
+# free of conflicts, in sync with the local bookmark, based on the bookmark
+# below it, approved (where review is required), and free of failing or pending
+# required checks. `mergeable == UNKNOWN` does not block: GitHub reports it
+# while it still computes the merge commit.
+#
+# The merge goes through `gh stack merge`, which is atomic: GitHub merges every
+# PR in the stack or none of them. `stack-link` runs first so the GitHub stack
+# matches the local stack, and the member list is compared against the local
+# stack before the merge, because `gh stack merge` always includes everything
+# below the PR it is given.
+#
+# A stack of one PR, a repo without the stacks API, and a missing `gh stack`
+# extension fall back to a bottom-up `gh pr merge` loop. Each PR is retargeted
+# onto the default branch first, because the squash-merge below it already put
+# that content on trunk. The loop is not atomic, so it can leave a merged prefix
+# behind.
+#
+# Cleanup covers every bookmark whose PR reached MERGED, so a partial fallback
+# merge and an aborted run both end in a consistent state. A stack that entered
+# a merge queue is still open, so the local stack stays untouched until it
+# merges.
+#
+# Extra args go to `gh stack merge`, or to every `gh pr merge` on the fallback
+# path. `--squash` is added unless the args name a merge method. `gh stack
+# merge` refuses `--admin`; only the fallback path takes it.
+stack-merge = ["util", "exec", "--", "bash", "-c", '''
+set -euo pipefail
+bookmarks=()
+while IFS= read -r line; do
+  bookmarks+=("$line")
+done < <(jj bs)
+if [[ ${#bookmarks[@]} -eq 0 ]]; then
+  exit 1
+fi
+method_given=0
+for a in "$@"; do
+  case "$a" in
+    --merge|--rebase|--squash|--merge-method|--merge-method=*) method_given=1 ;;
+  esac
+done
+if (( method_given == 0 )); then
+  set -- --squash "$@"
+fi
+repo=$(gh repo view --json nameWithOwner -q .nameWithOwner)
+default_branch=$(gh repo view --json defaultBranchRef -q .defaultBranchRef.name)
+printf '==> Checking %s bookmark(s)\n' "${#bookmarks[@]}"
+shas=()
+numbers=()
+blocked=0
+for i in "${!bookmarks[@]}"; do
+  b="${bookmarks[i]}"
+  if (( i == 0 )); then
+    expected_base="$default_branch"
+  else
+    expected_base="${bookmarks[i-1]}"
+  fi
+  shas[i]=$(jj log --no-graph -r "$b" -T 'commit_id')
+  if ! pr=$(gh pr list --head "$b" --state open \
+    --json number,isDraft,mergeable,reviewDecision,headRefOid,baseRefName \
+    --jq '.[0] // empty'); then
+    printf 'gh pr list failed for %s; not merging part of a stack\n' "$b" >&2
+    exit 1
+  fi
+  if [[ -z $pr ]]; then
+    printf '  🔴  %s: no open PR\n' "$b"
+    blocked=$((blocked + 1))
+    continue
+  fi
+  number=$(jq -r .number <<<"$pr")
+  numbers[i]="$number"
+  checks=$(gh pr checks "$b" --required --json bucket,name 2>/dev/null) || true
+  [[ -z ${checks:-} ]] && checks='[]'
+  fails=$(jq '[.[] | select(.bucket == "fail" or .bucket == "cancel")] | length' <<<"$checks")
+  pending=$(jq '[.[] | select(.bucket == "pending")] | length' <<<"$checks")
+  reasons=$(jq -r \
+    --arg base "$expected_base" \
+    --arg sha "${shas[i]}" \
+    --argjson fails "$fails" \
+    --argjson pending "$pending" '
+    [ (select(.isDraft) | "the PR is a draft"),
+      (select(.mergeable == "CONFLICTING") | "the PR conflicts with \(.baseRefName)"),
+      (select(.baseRefName != $base) | "the base is \(.baseRefName), not \($base); run `jj pr rebase`"),
+      (select(.headRefOid != $sha) | "the remote head is \(.headRefOid[0:12]), not \($sha[0:12]); run `jj stack push`"),
+      (select(.reviewDecision == "CHANGES_REQUESTED") | "a reviewer requested changes"),
+      (select(.reviewDecision == "REVIEW_REQUIRED") | "the PR needs an approval"),
+      (select($fails > 0) | "\($fails) failing required check(s)"),
+      (select($pending > 0) | "\($pending) pending required check(s)")
+    ] | .[]
+  ' <<<"$pr")
+  if [[ -z $reasons ]]; then
+    printf '  ✅  #%s  %s\n' "$number" "$b"
+    continue
+  fi
+  while IFS= read -r reason; do
+    printf '  🔴  #%s  %s: %s\n' "$number" "$b" "$reason"
+    blocked=$((blocked + 1))
+  done <<<"$reasons"
+done
+if (( blocked > 0 )); then
+  printf '\nrefusing to merge: %s blocker(s) in the stack\n' "$blocked" >&2
+  exit 1
+fi
+desired=$(printf '%s\n' "${numbers[@]}")
+stack=''
+if (( ${#numbers[@]} > 1 )) \
+  && gh stack --version >/dev/null 2>&1 \
+  && gh api "repos/$repo/stacks" >/dev/null 2>&1; then
+  printf '\n==> Syncing GitHub stack\n'
+  jj stack-link
+  if ! found=$(for n in "${numbers[@]}"; do
+    gh api "repos/$repo/stacks?pull_request=$n" --jq '.[] | select(.open != false) | .number'
+  done | awk 'NF' | sort -un); then
+    printf 'gh api failed while looking up the stack; not merging a stack it cannot read\n' >&2
+    exit 1
+  fi
+  case $(printf '%s\n' "$found" | awk 'NF' | wc -l | tr -d ' ') in
+    0) ;;
+    1) stack=$(printf '%s\n' "$found" | awk 'NF' | head -n1) ;;
+    *)
+      printf 'refusing to merge: these PRs belong to more than one GitHub stack (%s)\n' \
+        "$(paste -sd, - <<<"$found")" >&2
+      exit 1
+      ;;
+  esac
+fi
+if [[ -n $stack ]]; then
+  members=$(gh api "repos/$repo/stacks/$stack" \
+    --jq '.pull_requests[] | select(.merged_at == null and .state == "open") | .number' \
+    | awk 'NF')
+  if [[ "$members" != "$desired" ]]; then
+    printf 'refusing to merge: stack #%s holds PR(s) %s, but the local stack is %s\n' \
+      "$stack" "$(paste -sd, - <<<"$members")" "$(paste -sd, - <<<"$desired")" >&2
+    exit 1
+  fi
+fi
+cleanup() {
+  merged=()
+  for i in "${!bookmarks[@]}"; do
+    state=$(gh pr view "${numbers[i]}" --json state -q .state 2>/dev/null || echo UNKNOWN)
+    if [[ "$state" == "MERGED" ]]; then
+      merged+=("${bookmarks[i]}")
+    fi
+  done
+  if (( ${#merged[@]} == 0 )); then
+    printf '\n==> No PR reached MERGED, leaving the local stack alone\n'
+    return 0
+  fi
+  printf '\n==> Cleaning up %s merged bookmark(s)\n' "${#merged[@]}"
+  # Delete the remote branch *before* fetching so the fetch tears down the
+  # remote-tracking ref. Otherwise an untracked remote ref lingers, and
+  # untracked remotes are in immutable_heads() — which blocks the rebase below.
+  for b in "${merged[@]}"; do
+    gh api -X DELETE "repos/$repo/git/refs/heads/$b" --silent 2>/dev/null || true
+  done
+  jj git fetch
+  for b in "${merged[@]}"; do
+    jj bookmark forget --include-remotes "$b" 2>/dev/null || true
+  done
+  jj rebase -d 'trunk()'
+  jj abandon 'trunk()..@ & empty()' 2>/dev/null || true
+}
+trap cleanup EXIT
+if [[ -n $stack ]]; then
+  printf '\n==> Merging stack #%s (PRs %s)\n' "$stack" "$(paste -sd, - <<<"$desired")"
+  gh stack merge --yes "$stack" "$@"
+  exit 0
+fi
+printf '\n==> Merging %s PR(s) one at a time\n' "${#bookmarks[@]}"
+for i in "${!bookmarks[@]}"; do
+  b="${bookmarks[i]}"
+  printf '\n==> [%s/%s] Merging #%s %s\n' "$((i + 1))" "${#bookmarks[@]}" "${numbers[i]}" "$b"
+  base=$(gh pr view "${numbers[i]}" --json baseRefName -q .baseRefName)
+  if [[ "$base" != "$default_branch" ]]; then
+    printf '==> Retargeting %s: %s -> %s\n' "$b" "$base" "$default_branch"
+    gh pr edit "${numbers[i]}" --base "$default_branch"
+  fi
+  # Don't pass --delete-branch: gh's post-merge local-branch cleanup fails with
+  # "could not determine current branch" because jj leaves git in detached-HEAD
+  # state. The remote branch goes away in cleanup.
+  gh pr merge "${numbers[i]}" --match-head-commit "${shas[i]}" "$@"
+done
+''', "jj-stack-merge"]
 
 # pr-merge: merge the GitHub PR for the bookmark closest to @, but only if
 # it targets the repo default branch and has no failing required status checks.

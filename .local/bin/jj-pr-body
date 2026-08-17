@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Draft a PR description with Claude and open it in $EDITOR for review.
+# Shared by jj pr create, jj pr describe, and jj stack create.
+#
+# Usage: jj-pr-body <out-file> <diff-command> [args...]
+#   The diff command runs and its output goes into the prompt, after the
+#   standing instructions and the repo's PR template.
+
+out="${1:?usage: jj-pr-body <out-file> <diff-command> [args...]}"
+shift
+
+prompt_file="$HOME/.config/jj/PR_DESCRIBE_PROMPT.md"
+if [[ ! -f $prompt_file ]]; then
+  echo "missing prompt file: $prompt_file" >&2
+  exit 1
+fi
+
+repo_root=$(jj root 2>/dev/null || git rev-parse --show-toplevel 2>/dev/null || pwd)
+template_path=""
+for candidate in \
+  .github/PULL_REQUEST_TEMPLATE.md .github/pull_request_template.md \
+  PULL_REQUEST_TEMPLATE.md pull_request_template.md \
+  docs/PULL_REQUEST_TEMPLATE.md docs/pull_request_template.md; do
+  if [[ -f "$repo_root/$candidate" ]]; then
+    template_path="$repo_root/$candidate"
+    break
+  fi
+done
+
+prompt_input=$(mktemp -t jj-pr-body-prompt)
+trap 'rm -f "$prompt_input"' EXIT
+
+{
+  cat "$prompt_file"
+  echo
+  if [[ -n $template_path ]]; then
+    echo "## GitHub PR template"
+    echo
+    cat "$template_path"
+    echo
+  fi
+  echo "## Git diff"
+  echo
+  "$@"
+} > "$prompt_input"
+
+printf '==> Drafting description with Claude (sonnet)...\n' >&2
+claude --model sonnet --print < "$prompt_input" > "$out"
+
+"${EDITOR:-vi}" "$out"
+
+if [[ ! -s $out ]]; then
+  echo "empty description" >&2
+  exit 1
+fi
