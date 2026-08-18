@@ -32,5 +32,5 @@ tmpdir=$(mktemp -d -t jj-pr-new)
 trap 'rm -rf "$tmpdir"' EXIT
 body_file="$tmpdir/body.md"
 
-jj-pr-body "$body_file" jj diff --from "$from" --to "$head" --git
+jj-pr-body "$body_file" "${from}..${head}" jj diff --from "$from" --to "$head" --git
 gh pr create --head "$head" --base "$base" --title "$title" --body-file "$body_file" "$@"

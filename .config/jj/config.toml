@@ -453,8 +453,9 @@ fi
 
 # pr-create: open a GitHub PR for the nearest bookmark, basing it on the
 # next-nearest bookmark (or repo default if there isn't one). Title comes from
-# the head commit's first description line; body is drafted by Claude (sonnet)
-# from the base..head diff and opened in $EDITOR for review before posting.
+# the head commit's first description line; body is drafted by Claude from the
+# base..head diff, the commit messages, and the per-revision conversation logs,
+# then opened in $EDITOR for review before posting.
 # Extra args are forwarded to `gh pr create`.
 #
 # A bookmark that already has an open PR is left alone, so this is safe to run
@@ -503,8 +504,8 @@ if (( $(jj bs | wc -l | tr -d ' ') > 1 )); then
 fi
 ''', "jj-pr-create"]
 
-# pr-describe: draft a PR description with Claude (sonnet), open it in $EDITOR
-# for review/edit, then push the result to the PR via `gh pr edit`.
+# pr-describe: draft a PR description with Claude, open it in $EDITOR for
+# review/edit, then push the result to the PR via `gh pr edit`.
 pr-describe = ["util", "exec", "--", "bash", "-c", '''
 set -euo pipefail
 head=$(jj bb | head -n1)
@@ -512,10 +513,18 @@ if ! gh pr view "$head" --json number >/dev/null 2>&1; then
   echo "no PR found for $head" >&2
   exit 1
 fi
+# The PR base fixes the revset, so a stacked PR only feeds its own revisions
+# and their conversation logs to the draft.
+base=$(gh pr view "$head" --json baseRefName -q .baseRefName 2>/dev/null || true)
+if [[ -n $base ]] && jj log --no-graph --ignore-working-copy -r "$base" -T '""' >/dev/null 2>&1; then
+  revset="${base}..${head}"
+else
+  revset="trunk()..${head}"
+fi
 tmpdir=$(mktemp -d -t jj-pr-describe)
 trap 'rm -rf "$tmpdir"' EXIT
 body_file="$tmpdir/body.md"
-jj-pr-body "$body_file" gh pr diff "$head"
+jj-pr-body "$body_file" "$revset" gh pr diff "$head"
 gh pr edit "$head" --body-file "$body_file"
 ''', "jj-pr-describe"]
 

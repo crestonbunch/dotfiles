@@ -295,7 +295,7 @@ load_plugins {
     autolock
 }
 web_client {
-    font "monospace"
+    font "Maple Mono NF, monospace"
 }
  
 // Use a simplified UI without special fonts (arrow glyphs)
