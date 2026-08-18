@@ -871,6 +871,11 @@ jj git push "${push_args[@]}"
 # pr-rebase: reconcile each open PR's base to match the current stack ordering
 # (the bookmark below it, or the repo default for the bottom of the stack).
 # Walks `jj bs`, so a PR above @ is retargeted too.
+#
+# GitHub refuses to change the base of a PR that belongs to a stack. When a
+# base must move, the GitHub stack that holds it is unstacked first, and the
+# caller relinks it with `stack-link`. GitHub also refuses to unstack a PR that
+# is queued for merge or has auto-merge enabled. Unstack that PR by hand first.
 pr-rebase = ["util", "exec", "--", "bash", "-c", '''
 set -euo pipefail
 bookmarks=()
@@ -880,7 +885,12 @@ done < <(jj bs)
 if [[ ${#bookmarks[@]} -eq 0 ]]; then
   exit 1
 fi
+repo=$(gh repo view --json nameWithOwner -q .nameWithOwner)
 default_branch=$(gh repo view --json defaultBranchRef -q .defaultBranchRef.name)
+heads=()
+olds=()
+news=()
+numbers=()
 for i in "${!bookmarks[@]}"; do
   head="${bookmarks[i]}"
   if (( i == 0 )); then
@@ -888,17 +898,44 @@ for i in "${!bookmarks[@]}"; do
   else
     expected_base="${bookmarks[i-1]}"
   fi
-  if ! current_base=$(gh pr list --head "$head" --state open --json baseRefName --jq '.[0].baseRefName // empty'); then
+  if ! pr=$(gh pr list --head "$head" --state open --json number,baseRefName \
+    --jq '.[0] | select(.number) | "\(.number)\t\(.baseRefName)"'); then
     printf 'gh pr list failed for %s; not guessing whether a PR exists\n' "$head" >&2
     exit 1
   fi
-  if [[ -z $current_base ]]; then
+  if [[ -z $pr ]]; then
     continue
   fi
-  if [[ "$current_base" != "$expected_base" ]]; then
-    printf 'rebasing PR for %s: %s -> %s\n' "$head" "$current_base" "$expected_base"
-    gh pr edit "$head" --base "$expected_base"
+  IFS=$'\t' read -r number current_base <<<"$pr"
+  if [[ "$current_base" == "$expected_base" ]]; then
+    continue
   fi
+  heads+=("$head")
+  olds+=("$current_base")
+  news+=("$expected_base")
+  numbers+=("$number")
+done
+if [[ ${#heads[@]} -eq 0 ]]; then
+  exit 0
+fi
+if gh api "repos/$repo/stacks" >/dev/null 2>&1; then
+  if ! stacks=$(for n in "${numbers[@]}"; do
+    gh api "repos/$repo/stacks?pull_request=$n" --jq '.[] | select(.open != false) | .number'
+  done | awk 'NF' | sort -un); then
+    printf 'gh api failed while looking up the stack of a PR to retarget\n' >&2
+    exit 1
+  fi
+  for s in $stacks; do
+    printf 'unstacking GitHub stack #%s so the bases can move\n' "$s"
+    if ! gh api -X POST "repos/$repo/stacks/$s/unstack" >/dev/null; then
+      printf 'failed to unstack #%s; unstack a merge-queued or auto-merge PR by hand\n' "$s" >&2
+      exit 1
+    fi
+  done
+fi
+for i in "${!heads[@]}"; do
+  printf 'rebasing PR for %s: %s -> %s\n' "${heads[i]}" "${olds[i]}" "${news[i]}"
+  gh pr edit "${heads[i]}" --base "${news[i]}"
 done
 ''', "jj-pr-rebase"]
 
@@ -1119,9 +1156,11 @@ fi
 # behind.
 #
 # Cleanup covers every bookmark whose PR reached MERGED, so a partial fallback
-# merge and an aborted run both end in a consistent state. A stack that entered
-# a merge queue is still open, so the local stack stays untouched until it
-# merges.
+# merge and an aborted run both end in a consistent state. It abandons every
+# commit the merged PRs contained, recorded by change id before the merge,
+# because a squash-merge puts all of that content on trunk under one new commit.
+# A stack that entered a merge queue is still open, so the local stack stays
+# untouched until it merges.
 #
 # Extra args go to `gh stack merge`, or to every `gh pr merge` on the fallback
 # path. `--squash` is added unless the args name a merge method. `gh stack
@@ -1148,16 +1187,24 @@ repo=$(gh repo view --json nameWithOwner -q .nameWithOwner)
 default_branch=$(gh repo view --json defaultBranchRef -q .defaultBranchRef.name)
 printf '==> Checking %s bookmark(s)\n' "${#bookmarks[@]}"
 shas=()
+changes=()
 numbers=()
 blocked=0
 for i in "${!bookmarks[@]}"; do
   b="${bookmarks[i]}"
   if (( i == 0 )); then
     expected_base="$default_branch"
+    base_rev='trunk()'
   else
     expected_base="${bookmarks[i-1]}"
+    base_rev="${bookmarks[i-1]}"
   fi
   shas[i]=$(jj log --no-graph -r "$b" -T 'commit_id')
+  # Record the commits the squash-merge will absorb, by change id: a rebase
+  # rewrites the commit ids, so a commit id captured here no longer resolves
+  # after the fetch.
+  changes[i]=$(jj log --no-graph -r "$base_rev..$b" -T 'change_id ++ "\n"' \
+    | awk 'NF { printf "%spresent(%s)", (NR > 1 ? " | " : ""), $1 }')
   if ! pr=$(gh pr list --head "$b" --state open \
     --json number,isDraft,mergeable,reviewDecision,headRefOid,baseRefName \
     --jq '.[0] // empty'); then
@@ -1238,10 +1285,14 @@ if [[ -n $stack ]]; then
 fi
 cleanup() {
   merged=()
+  merged_changes=()
   for i in "${!bookmarks[@]}"; do
     state=$(gh pr view "${numbers[i]}" --json state -q .state 2>/dev/null || echo UNKNOWN)
     if [[ "$state" == "MERGED" ]]; then
       merged+=("${bookmarks[i]}")
+      if [[ -n "${changes[i]:-}" ]]; then
+        merged_changes+=("${changes[i]}")
+      fi
     fi
   done
   if (( ${#merged[@]} == 0 )); then
@@ -1259,6 +1310,14 @@ cleanup() {
   for b in "${merged[@]}"; do
     jj bookmark forget --include-remotes "$b" 2>/dev/null || true
   done
+  # The squash-merge put the content of every recorded commit on trunk, so all
+  # of them must go. The fetch drops only the commit a deleted bookmark pointed
+  # at, and it keeps any commit another bookmark still reaches, so a survivor
+  # reapplies content trunk already has and conflicts on the rebase below.
+  if (( ${#merged_changes[@]} > 0 )); then
+    revset=$(printf ' | %s' "${merged_changes[@]}")
+    jj abandon -r "${revset# | }" || true
+  fi
   jj rebase -d 'trunk()'
   jj abandon 'trunk()..@ & empty()' 2>/dev/null || true
 }
