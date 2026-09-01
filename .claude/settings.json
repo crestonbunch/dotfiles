@@ -57,5 +57,6 @@
   "effortLevel": "high",
   "tui": "fullscreen",
   "skipWorkflowUsageWarning": true,
-  "skipAutoPermissionPrompt": true
+  "skipAutoPermissionPrompt": true,
+  "remoteControlAtStartup": false
 }

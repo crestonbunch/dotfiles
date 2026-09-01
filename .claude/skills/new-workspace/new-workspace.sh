@@ -13,9 +13,9 @@ set -euo pipefail
 #
 # create prints key=value lines on stdout. jj and zellij write to stderr.
 #
-# The workspace name is "<repo-name>-<slug>". Inside zellij, create opens a tab
-# with two stacked panes: Claude on the brief, and a shell. Both panes start in
-# the workspace.
+# The workspace name is "<repo-name>-<slug>", with a random suffix if that name
+# is in use. Inside zellij, create opens a tab with two stacked panes:
+# Claude on the brief, and a shell. Both panes start in the workspace.
 
 workspaces_dir="$HOME/.workspaces"
 tasks_dir="$workspaces_dir/.tasks"
@@ -24,6 +24,17 @@ die() { printf 'new-workspace: %s\n' "$1" >&2; exit 1; }
 
 repo_root() {
   jj workspace root 2>/dev/null || die "not a jj repo (cwd: $PWD)"
+}
+
+# In a secondary workspace, .jj/repo is a file that points at the store of the
+# main workspace. Resolve it, so a workspace created from inside a workspace is
+# named after the repo and not after its parent workspace.
+repo_name() {
+  local root store
+  root="$1"
+  store=$(cd "$root/.jj" && realpath "$(cat repo 2>/dev/null || echo repo)") \
+    || die "cannot resolve the repo store of $root"
+  basename "$(dirname "$(dirname "$store")")"
 }
 
 cmd_create() {
@@ -44,14 +55,6 @@ cmd_create() {
 
   local root name dest
   root=$(repo_root)
-  name="$(basename "$root")-$slug"
-  dest="$workspaces_dir/$name"
-  if [ -e "$dest" ]; then
-    local n=2
-    while [ -e "$workspaces_dir/$name-$n" ]; do n=$((n + 1)); done
-    name="$name-$n"
-    dest="$workspaces_dir/$name"
-  fi
 
   # Read the brief before jj runs, so a missing file fails before the workspace
   # exists.
@@ -72,6 +75,14 @@ cmd_create() {
     || die "base revision does not resolve: $base"
   [ "$(printf '%s\n' "$base_desc" | grep -c .)" = 1 ] \
     || die "base revision is not a single commit: $base"
+
+  name="$(repo_name "$root")-$slug"
+  # The name can be taken by a directory, or by a workspace whose directory was
+  # removed without `jj workspace forget`.
+  if [ -e "$workspaces_dir/$name" ] || jj workspace list | grep -q "^$name: "; then
+    name="$name-$RANDOM"
+  fi
+  dest="$workspaces_dir/$name"
 
   mkdir -p "$workspaces_dir"
   if [ -n "$message" ]; then
