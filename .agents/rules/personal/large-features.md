@@ -24,9 +24,9 @@ small change, a single-file edit, or a question.
 - Spawn the research subagents in one message, so they run in parallel.
 - Give each subagent one question: the shape of the existing code, the API of
   a dependency, the prior art in the repo, the constraints from the tests.
-- Give the web tools to a subagent when the work touches an external API, a
+- Give web access to a subagent when the work touches an external API, a
   library, or a standard.
-- Use `sonnet`. Use `haiku` for a simple lookup.
+- Use a capable model for research. Use a fast model for a simple lookup.
 - Read the reports. Then plan the work.
 - Do not write code before the research is complete.
 

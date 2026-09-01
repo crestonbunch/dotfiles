@@ -1,6 +1,6 @@
 ---
 name: compact-revision-log
-description: Compress the Claude conversation log for the current jj revision by filtering out noise (diffs, code blocks, redundant detail) while preserving decisions, user intent, and notable choices. Use when the user says "compact the log", "clean up the revision log", or "compress the log".
+description: Compress the Claude conversation log for the current jj revision by filtering out noise while preserving decisions and user intent. Use from any agent when the user says "compact the log", "clean up the revision log", or "compress the log".
 ---
 
 # Compact the revision log
@@ -26,7 +26,7 @@ log_file="$HOME/.local/share/claude-logs/${ws_name}-${ws_hash}/${rev_id}.md"
 2. Read the log file. If it doesn't exist or is empty, tell the user and
    stop.
 
-3. Send the full contents to Sonnet with this prompt:
+3. Filter the full contents with these requirements:
 
 > Filter this conversation log to remove noise. Keep the structure
 > (timestamps, `## User` / `## Changes` headers) intact.

@@ -43,14 +43,29 @@
 # claude
 !.claude/
 !.claude/rules/
+!.claude/rules/personal
 !.claude/rules/personal/
 !.claude/rules/personal/**/*
+!.claude/skills
 !.claude/skills/
 !.claude/skills/**/*
 !.claude/settings.json
 !.claude/statusline-command.sh
 !.claude/hooks/
 !.claude/hooks/**/*
+
+# agent skills and personal rules
+!.agents/
+!.agents/skills/
+!.agents/skills/**/*
+!.agents/rules/
+!.agents/rules/personal/
+!.agents/rules/personal/**/*
+
+# pi
+!.pi/
+!.pi/agent/
+!.pi/agent/AGENTS.md
 
 # scripts
 !.local/
