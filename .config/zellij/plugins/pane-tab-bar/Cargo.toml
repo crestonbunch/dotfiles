@@ -1,0 +1,13 @@
+[package]
+name = "pane-tab-bar"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+unicode-width = "0.2"
+zellij-tile = "=0.45.1"
+
+[profile.release]
+lto = true
+opt-level = "z"
+strip = true
