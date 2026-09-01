@@ -1,6 +1,7 @@
+import { request as httpsRequest } from "node:https";
 import { basename } from "node:path";
 import type { AssistantMessage } from "@earendil-works/pi-ai";
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 
 const ICON = {
@@ -19,6 +20,10 @@ const ICON = {
   cost: "",
 } as const;
 
+const CODEX_PROVIDER = "openai-codex";
+const CODEX_BASE_URL = "https://chatgpt.com/backend-api";
+const USAGE_REFRESH_INTERVAL_MS = 60_000;
+
 const FILLED = "▰";
 const EMPTY = "▱";
 const SEPARATOR = " · ";
@@ -31,6 +36,7 @@ type Theme = {
 type RateLimit = {
   percent: number;
   resetsAt?: number;
+  windowSeconds?: number;
 };
 
 type Location = {
@@ -42,6 +48,13 @@ type Location = {
 const formatTokens = (tokens: number): string => {
   if (tokens < 1000) return `${tokens}`;
   return `${(tokens / 1000).toFixed(1)}k`;
+};
+
+const formatWindow = (seconds: number | undefined): string => {
+  if (seconds === undefined || seconds <= 0) return "";
+  if (seconds >= 86400) return `${Math.round(seconds / 86400)}d`;
+  if (seconds >= 3600) return `${Math.round(seconds / 3600)}h`;
+  return `${Math.round(seconds / 60)}m`;
 };
 
 const relativeReset = (resetsAt: number | undefined): string => {
@@ -105,18 +118,81 @@ const readRateLimit = (
     `x-codex-${prefix}-reset-at`,
     `x-openai-${prefix}-reset-at`,
   ]);
+  const windowMinutes = parseNumber(headers, [
+    `x-codex-${prefix}-window-minutes`,
+    `x-openai-${prefix}-window-minutes`,
+  ]);
 
   return {
     percent,
     resetsAt: resetAt ?? (resetAfter === undefined ? undefined : Date.now() / 1000 + resetAfter),
+    windowSeconds: windowMinutes === undefined ? undefined : windowMinutes * 60,
   };
 };
 
-const rateSegment = (theme: Theme, icon: string, limit: RateLimit | undefined): string => {
+const readUsageWindow = (value: unknown): RateLimit | undefined => {
+  if (typeof value !== "object" || value === null) return undefined;
+  const window = value as Record<string, unknown>;
+  const percent = window.used_percent;
+  if (typeof percent !== "number") return undefined;
+
+  const resetAt = typeof window.reset_at === "number" ? window.reset_at : undefined;
+  const resetAfter = typeof window.reset_after_seconds === "number" ? window.reset_after_seconds : undefined;
+  const windowSeconds = typeof window.limit_window_seconds === "number" ? window.limit_window_seconds : undefined;
+
+  return {
+    percent,
+    resetsAt: resetAt ?? (resetAfter === undefined ? undefined : Date.now() / 1000 + resetAfter),
+    windowSeconds,
+  };
+};
+
+// The ChatGPT account id lives in a namespaced JWT claim of the OAuth access
+// token; the usage endpoint rejects a request without it.
+const codexAccountId = (token: string): string | undefined => {
+  const payload = token.split(".")[1];
+  if (!payload) return undefined;
+  try {
+    const claims = JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as Record<string, unknown>;
+    const auth = claims["https://api.openai.com/auth"] as { chatgpt_account_id?: unknown } | undefined;
+    return typeof auth?.chatgpt_account_id === "string" ? auth.chatgpt_account_id : undefined;
+  } catch {
+    return undefined;
+  }
+};
+
+// Node's fetch is served a bot-check page by chatgpt.com. A plain https
+// request with the same headers is not.
+const getJson = (url: string, headers: Record<string, string>, timeoutMs: number): Promise<unknown> =>
+  new Promise((resolve, reject) => {
+    const req = httpsRequest(url, { headers, timeout: timeoutMs }, (res) => {
+      const chunks: Buffer[] = [];
+      res.on("data", (chunk: Buffer) => chunks.push(chunk));
+      res.on("end", () => {
+        if (res.statusCode !== 200) {
+          reject(new Error(`GET ${url} returned ${res.statusCode}`));
+          return;
+        }
+        try {
+          resolve(JSON.parse(Buffer.concat(chunks).toString("utf8")));
+        } catch (error) {
+          reject(error);
+        }
+      });
+    });
+    req.on("timeout", () => req.destroy(new Error(`GET ${url} timed out`)));
+    req.on("error", reject);
+    req.end();
+  });
+
+const rateSegment = (theme: Theme, limit: RateLimit | undefined): string => {
   if (!limit) return "";
+  const icon = limit.windowSeconds !== undefined && limit.windowSeconds >= 172800 ? ICON.week : ICON.session;
+  const window = formatWindow(limit.windowSeconds);
+  const windowText = window ? ` ${theme.fg("muted", window)}` : "";
   const reset = relativeReset(limit.resetsAt);
   const resetText = reset ? ` ${theme.fg("dim", ICON.reset)} ${theme.fg("dim", reset)}` : "";
-  return `${theme.fg("dim", icon)} ${bar(theme, limit.percent, 10)} ${Math.round(limit.percent)}%${resetText}`;
+  return `${theme.fg("dim", icon)}${windowText} ${bar(theme, limit.percent, 10)} ${Math.round(limit.percent)}%${resetText}`;
 };
 
 export default (pi: ExtensionAPI) => {
@@ -128,7 +204,50 @@ export default (pi: ExtensionAPI) => {
   let refreshActive = false;
   let refreshAgain = false;
   let lastPullRequestRefresh = 0;
+  let lastUsageRefresh = 0;
+  let usageActive = false;
   let alive = false;
+
+  // pi reaches Codex over a WebSocket by default, so `after_provider_response`
+  // never carries the rate-limit headers. Read the limits from the account
+  // usage endpoint instead.
+  const refreshCodexUsage = async (ctx: ExtensionContext): Promise<void> => {
+    if (usageActive || ctx.model?.provider !== CODEX_PROVIDER) return;
+    const now = Date.now();
+    if (now - lastUsageRefresh < USAGE_REFRESH_INTERVAL_MS) return;
+    lastUsageRefresh = now;
+    usageActive = true;
+
+    try {
+      const auth = await ctx.modelRegistry.getProviderAuth(CODEX_PROVIDER);
+      const token = auth?.auth.apiKey;
+      if (!token) return;
+      const accountId = codexAccountId(token);
+      if (!accountId) return;
+
+      const baseUrl = auth.auth.baseUrl ?? CODEX_BASE_URL;
+      const usage = (await getJson(
+        `${baseUrl}/codex/usage`,
+        {
+          authorization: `Bearer ${token}`,
+          "chatgpt-account-id": accountId,
+          originator: "pi",
+          "user-agent": "pi-footer",
+        },
+        5000,
+      )) as { rate_limit?: Record<string, unknown> };
+      if (!alive) return;
+
+      const rateLimit = usage.rate_limit ?? {};
+      sessionLimit = readUsageWindow(rateLimit.primary_window) ?? sessionLimit;
+      weekLimit = readUsageWindow(rateLimit.secondary_window) ?? weekLimit;
+      requestRender?.();
+    } catch {
+      // A failed poll keeps the last known limits on screen.
+    } finally {
+      usageActive = false;
+    }
+  };
 
   const refreshLocation = async (cwd: string, includePullRequest: boolean): Promise<void> => {
     if (refreshActive) {
@@ -255,8 +374,8 @@ export default (pi: ExtensionAPI) => {
           ]);
 
           const lines = [align(line1Left, line1Right, width), align(line2Left, line2Right, width)];
-          const session = rateSegment(theme, ICON.session, sessionLimit);
-          const week = rateSegment(theme, ICON.week, weekLimit);
+          const session = rateSegment(theme, sessionLimit);
+          const week = rateSegment(theme, weekLimit);
           if (session || week) lines.push(align(session, week, width));
           return lines;
         },
@@ -264,6 +383,7 @@ export default (pi: ExtensionAPI) => {
     });
 
     scheduleLocationRefresh(ctx.cwd, true);
+    void refreshCodexUsage(ctx);
   });
 
   pi.on("tool_execution_end", (_event, ctx) => {
@@ -271,10 +391,16 @@ export default (pi: ExtensionAPI) => {
   });
 
   pi.on("agent_settled", (_event, ctx) => {
-    if (ctx.mode === "tui") scheduleLocationRefresh(ctx.cwd, true);
+    if (ctx.mode !== "tui") return;
+    scheduleLocationRefresh(ctx.cwd, true);
+    void refreshCodexUsage(ctx);
   });
 
-  pi.on("model_select", () => requestRender?.());
+  pi.on("model_select", (_event, ctx) => {
+    lastUsageRefresh = 0;
+    void refreshCodexUsage(ctx);
+    requestRender?.();
+  });
   pi.on("thinking_level_select", () => requestRender?.());
 
   pi.on("after_provider_response", (event) => {

@@ -85,7 +85,6 @@ impl State {
 impl ZellijPlugin for State {
     fn load(&mut self, _configuration: BTreeMap<String, String>) {
         self.visible = true;
-        set_selectable(false);
         request_permission(&[
             PermissionType::ReadApplicationState,
             PermissionType::ChangeApplicationState,
@@ -131,7 +130,11 @@ impl ZellijPlugin for State {
                 self.schedule_refresh();
                 visible
             }
-            Event::PermissionRequestResult(_) => true,
+            Event::PermissionRequestResult(PermissionStatus::Granted) => {
+                set_selectable(false);
+                true
+            }
+            Event::PermissionRequestResult(PermissionStatus::Denied) => true,
             _ => false,
         }
     }
