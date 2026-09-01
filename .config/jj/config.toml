@@ -810,11 +810,12 @@ fi
 jj git push "${push_args[@]}"
 ''', "jj-pr-push"]
 
-# stack-push: run pre-commit once per bookmark, bottom first, then push every
-# bookmark in the stack. Each bookmark is linted over its own PR diff
-# (<bookmark below>..<bookmark>), so a fix lands in the PR that introduced the
-# file instead of at the top of the stack, which is where a single
-# `trunk()..@` pass puts every fix.
+# stack-push: run pre-commit once per bookmark that differs from its open PR,
+# bottom first, then push every bookmark in the stack. New PRs are always
+# checked. Each bookmark is linted over its own PR diff (<bookmark
+# below>..<bookmark>), so a fix lands in the PR that introduced the file
+# instead of at the top of the stack, which is where a single `trunk()..@`
+# pass puts every fix.
 #
 # `jj precommit` leaves a fix in a new revision on top of @, so this moves the
 # bookmark being pushed onto that revision with `jj bm`, which also rebases the
@@ -846,6 +847,16 @@ restore() {
 trap restore EXIT
 for i in "${!bookmarks[@]}"; do
   b="${bookmarks[i]}"
+  local_sha=$(jj log --no-graph -r "$b" -T 'commit_id')
+  if ! remote_sha=$(gh pr list --head "$b" --state open --json headRefOid \
+    --jq '.[0].headRefOid // empty'); then
+    printf 'gh pr list failed for %s; not skipping its pre-commit checks\n' "$b" >&2
+    exit 1
+  fi
+  if [[ -n $remote_sha && "$local_sha" == "$remote_sha" ]]; then
+    printf '\n==> Skipping pre-commit for %s; its PR is up to date\n' "$b"
+    continue
+  fi
   if (( i == 0 )); then
     from='trunk()'
   else
