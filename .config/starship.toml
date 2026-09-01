@@ -1,8 +1,11 @@
+command_timeout = 1000
+
 [python]
 disabled = true
 
 [custom.python]
 description = "Python version from the project venv's pyvenv.cfg (hidden when uv.lock exists)"
+shell = ["/bin/sh"]
 when = 'test -f "${VIRTUAL_ENV:-.venv}/pyvenv.cfg" && ! test -f uv.lock'
 command = '''awk -F' *= *' '/^(version_info|version)/ {print $2; exit}' "${VIRTUAL_ENV:-.venv}/pyvenv.cfg"'''
 format = 'via [🐍 $output]($style) '
@@ -10,6 +13,7 @@ style = "yellow bold"
 
 [custom.uv]
 description = "uv project (with python version from the venv's pyvenv.cfg if present)"
+shell = ["/bin/sh"]
 when = "test -f uv.lock"
 command = '''awk -F' *= *' '/^(version_info|version)/ {print $2; exit}' "${VIRTUAL_ENV:-.venv}/pyvenv.cfg" 2>/dev/null || true'''
 format = 'via [🦄 uv $output]($style) '
@@ -17,12 +21,14 @@ style = "purple bold"
 
 [custom.mise]
 description = "Indicator that a local mise config is active"
-when = 'test -n "$(mise config ls --no-header 2>/dev/null)"'
+shell = ["/bin/sh"]
+when = 'command -v mise >/dev/null 2>&1 && test -n "$(mise config ls --no-header 2>/dev/null)"'
 format = 'via [󰢛 mise]($style) '
 style = "#ff5f87 bold"
 
 [custom.jj]
 description = "The current jj status"
+shell = ["/bin/sh"]
 when = "jj --ignore-working-copy root"
 symbol = "⬡ "
 command = '''
@@ -53,6 +59,7 @@ disabled = true
 disabled = true
 
 [custom.git_status]
+shell = ["/bin/sh"]
 when = "! jj --ignore-working-copy root"
 command = "starship module git_status"
 style = ""
@@ -62,6 +69,7 @@ description = "Only show git_status if we're not in a jj repo"
 disabled = true
 
 [custom.git_commit]
+shell = ["/bin/sh"]
 when = "! jj --ignore-working-copy root"
 command = "starship module git_commit"
 style = ""
@@ -71,6 +79,7 @@ description = "Only show git_commit if we're not in a jj repo"
 disabled = true
 
 [custom.git_metrics]
+shell = ["/bin/sh"]
 when = "! jj --ignore-working-copy root"
 command = "starship module git_metrics"
 description = "Only show git_metrics if we're not in a jj repo"
@@ -80,8 +89,8 @@ style = ""
 disabled = true
 
 [custom.git_branch]
+shell = ["/bin/sh"]
 when = "! jj --ignore-working-copy root"
 command = "starship module git_branch"
 description = "Only show git_branch if we're not in a jj repo"
 style = ""
-

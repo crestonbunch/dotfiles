@@ -309,6 +309,9 @@ web_client {
 // Default: default
 // 
 theme "everforest-dark"
+
+stacked_pane_list false
+pane_frame_style "full"
  
 // Choose the base input mode of zellij.
 // Default: normal
