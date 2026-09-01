@@ -66,6 +66,9 @@
 !.pi/
 !.pi/agent/
 !.pi/agent/AGENTS.md
+!.pi/agent/extensions/
+!.pi/agent/extensions/claude-footer.ts
+!.pi/agent/extensions/zellij-pane-title.ts
 
 # scripts
 !.local/
