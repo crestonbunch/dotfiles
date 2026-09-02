@@ -99,6 +99,16 @@ write_launcher() {
   chmod +x "$path"
 }
 
+# A layout given to new-tab replaces the tab template of the session, so the
+# tab gets whichever bars the layout names instead of the ones in the config.
+# A tab created without a layout takes the template of the session.
+open_tab() {
+  local name="$1" dest="$2" launcher="$3" tab_id
+  tab_id=$(zellij action new-tab --name "$name" --cwd "$dest")
+  zellij action new-pane --tab-id "$tab_id" --stacked --name "" --cwd "$dest" -- "$launcher" >/dev/null
+  printf '%s\n' "$tab_id"
+}
+
 cmd_create() {
   local slug="${1:-}"; shift || true
   [ -n "$slug" ] || die "usage: new-workspace.sh create <slug> [options]"
@@ -163,29 +173,8 @@ cmd_create() {
   local launcher="$task_dir/launch.sh"
   write_launcher "$launcher" "$dest" "${launch_command[@]}"
 
-  local layout="$task_dir/tab.kdl"
-  {
-    printf 'layout {\n'
-    printf '    default_tab_template {\n'
-    printf '        pane size=1 borderless=true {\n'
-    printf '            plugin location="zellij:tab-bar"\n'
-    printf '        }\n'
-    printf '        children\n'
-    printf '        pane size=1 borderless=true {\n'
-    printf '            plugin location="zellij:status-bar"\n'
-    printf '        }\n'
-    printf '    }\n'
-    printf '    tab {\n'
-    printf '        pane stacked=true {\n'
-    printf '            pane focus=true expanded=true command="%s"\n' "$launcher"
-    printf '            pane\n'
-    printf '        }\n'
-    printf '    }\n'
-    printf '}\n'
-  } > "$layout"
-
   local tab_id
-  tab_id=$(zellij action new-tab --layout "$layout" --cwd "$dest" --name "$slug")
+  tab_id=$(open_tab "$slug" "$dest" "$launcher")
   printf 'tab=%s\n' "$slug"
   printf 'tab_id=%s\n' "$tab_id"
 }
