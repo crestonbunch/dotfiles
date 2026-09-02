@@ -14,7 +14,6 @@ set -euo pipefail
 # create prints key=value lines on stdout. jj and zellij write to stderr.
 
 workspaces_dir="$HOME/.workspaces"
-tasks_dir="$workspaces_dir/.tasks"
 continuation_prompt="Continue this task in the new workspace. Work only in this workspace."
 
 die() { printf 'new-workspace: %s\n' "$1" >&2; exit 1; }
@@ -88,24 +87,14 @@ print_command() {
   printf '\n'
 }
 
-write_launcher() {
-  local path="$1" dest="$2" arg
-  shift 2
-  {
-    printf '#!/usr/bin/env bash\nset -euo pipefail\ncd %q\nexec ' "$dest"
-    for arg in "$@"; do printf '%q ' "$arg"; done
-    printf '\n'
-  } > "$path"
-  chmod +x "$path"
-}
-
 # A layout given to new-tab replaces the tab template of the session, so the
 # tab gets whichever bars the layout names instead of the ones in the config.
 # A tab created without a layout takes the template of the session.
 open_tab() {
-  local name="$1" dest="$2" launcher="$3" tab_id
+  local name="$1" dest="$2" tab_id
+  shift 2
   tab_id=$(zellij action new-tab --name "$name" --cwd "$dest")
-  zellij action new-pane --tab-id "$tab_id" --stacked --name "" --cwd "$dest" -- "$launcher" >/dev/null
+  zellij action new-pane --tab-id "$tab_id" --stacked --name "" --cwd "$dest" -- "$@" >/dev/null
   printf '%s\n' "$tab_id"
 }
 
@@ -168,13 +157,8 @@ cmd_create() {
     return 0
   fi
 
-  local task_dir="$tasks_dir/$name"
-  mkdir -p "$task_dir"
-  local launcher="$task_dir/launch.sh"
-  write_launcher "$launcher" "$dest" "${launch_command[@]}"
-
   local tab_id
-  tab_id=$(open_tab "$slug" "$dest" "$launcher")
+  tab_id=$(open_tab "$slug" "$dest" "${launch_command[@]}")
   printf 'tab=%s\n' "$slug"
   printf 'tab_id=%s\n' "$tab_id"
 }
@@ -192,8 +176,7 @@ cmd_remove() {
   grep -q "^$name: " <<<"$list" || die "no such jj workspace: $name"
 
   jj workspace forget "$name" >&2
-  rm -rf "$workspaces_dir/$name" "$tasks_dir/$name"
-  rmdir "$tasks_dir" 2>/dev/null || true
+  rm -rf "$workspaces_dir/$name"
   printf 'removed=%s\n' "$name"
 }
 

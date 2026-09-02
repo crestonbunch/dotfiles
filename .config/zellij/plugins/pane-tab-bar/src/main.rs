@@ -519,6 +519,59 @@ mod tests {
         assert_eq!(state.tab_titles(22, 4), ["○", "● claude"]);
     }
 
+    fn pane(title: &str, focused: bool, y: usize) -> PaneInfo {
+        PaneInfo {
+            id: (y + 1) as u32,
+            title: title.to_string(),
+            is_focused: focused,
+            pane_y: y,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn fits_the_real_four_tab_session() {
+        let state = state(vec![
+            (
+                false,
+                vec![
+                    pane("Pane #1", false, 0),
+                    pane("nvim", false, 1),
+                    pane("\u{f012c} pi", false, 2),
+                    pane("\u{f0156} pi", true, 3),
+                ],
+            ),
+            (
+                false,
+                vec![pane("\u{2733} Swift tests performance review", true, 0)],
+            ),
+            (
+                true,
+                vec![pane(
+                    "\u{2834} Workspace creating skill and zellij tab",
+                    true,
+                    0,
+                )],
+            ),
+            (
+                false,
+                vec![
+                    pane("Pane #1", false, 0),
+                    pane("\u{2838} Graph group persistence", true, 1),
+                ],
+            ),
+        ]);
+
+        let available = 115 - " Zellij (zjtest) ".width() - (" + ".width() + 4);
+        let titles = state.tab_titles(available, 4);
+        let total: usize = titles.iter().map(|t| t.width() + 2 + 4).sum();
+
+        assert!(
+            total <= available,
+            "total {total} > available {available}: {titles:?}"
+        );
+    }
+
     #[test]
     fn counts_wide_characters_by_columns() {
         assert_eq!(truncate("日本語のタイトル", 7), "日本語…");

@@ -83,6 +83,6 @@ Run the command from the main repo. Close the zellij tab first:
 zellij action go-to-tab-name <slug> && zellij action close-tab
 ```
 
-The script forgets the workspace and deletes its workspace and launch files.
+The script forgets the workspace and deletes its directory.
 If jj reports a stale working copy, run `jj workspace update-stale` in that
 workspace.
