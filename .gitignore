@@ -80,3 +80,4 @@
 !.local/bin/jj-claude-describe
 !.local/bin/jj-pr-body
 !.local/bin/jj-pr-new
+!.local/bin/claude-pane-title

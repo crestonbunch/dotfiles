@@ -1,0 +1,316 @@
+#!/usr/bin/env python3
+"""Show the run status of a Claude Code session in its terminal title.
+
+Claude Code has no extension API for the terminal title, so a detached daemon
+renders it. A SessionStart hook starts the daemon and a SessionEnd hook stops
+it. The daemon reads the session status from ~/.claude/sessions/<pid>.json and
+writes an OSC 2 sequence to the pty of the claude process. A hook process has
+no controlling terminal, so the daemon finds the pty from the process tree.
+"""
+
+import json
+import os
+import re
+import signal
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+BUSY_FRAMES = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+SHELL_FRAMES = "▖▘▝▗"
+IDLE_GLYPH = "\U000f0132"
+WAITING_GLYPH = "\U000f009a"
+ERROR_GLYPH = "\U000f0156"
+
+FRAME_SECONDS = 0.08
+REPAINT_SECONDS = 0.4
+EXIT_GRACE_SECONDS = 0.5
+MAX_TITLE_CHARS = 60
+MAX_ANCESTORS = 8
+
+HOME = Path.home()
+SESSION_DIR = HOME / ".claude" / "sessions"
+PROJECT_DIR = HOME / ".claude" / "projects"
+RUN_DIR = Path(os.environ.get("TMPDIR", "/tmp")) / "claude-pane-title"
+
+
+def process_info(pid):
+    """Return (ppid, tty name) for pid, or None if the process is gone."""
+    result = subprocess.run(
+        ["ps", "-o", "ppid=,tty=", "-p", str(pid)],
+        capture_output=True,
+        text=True,
+    )
+    fields = result.stdout.split()
+    if len(fields) < 2:
+        return None
+    try:
+        return int(fields[0]), fields[1]
+    except ValueError:
+        return None
+
+
+def find_claude():
+    """Return (pid, tty path) of the claude process that owns this hook."""
+    pid = os.getppid()
+    for _ in range(MAX_ANCESTORS):
+        info = process_info(pid)
+        if info is None:
+            return None
+        ppid, tty = info
+        if tty != "??" and (SESSION_DIR / f"{pid}.json").exists():
+            return pid, f"/dev/{tty}"
+        if ppid <= 1:
+            return None
+        pid = ppid
+    return None
+
+
+def is_alive(pid):
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def read_json(path):
+    try:
+        with open(path, "rb") as handle:
+            return json.loads(handle.read())
+    except (OSError, ValueError):
+        return None
+
+
+def project_slug(cwd):
+    return re.sub(r"[^A-Za-z0-9_-]", "-", cwd)
+
+
+def transcript_for(session):
+    cwd = session.get("cwd")
+    session_id = session.get("sessionId")
+    if not cwd or not session_id:
+        return None
+    return PROJECT_DIR / project_slug(cwd) / f"{session_id}.jsonl"
+
+
+class TitleSource:
+    """Track the title Claude Code shows for one session.
+
+    The custom title of /rename wins over the generated topic title. Both come
+    from disk, so the daemon shows the same text as the built-in title.
+    """
+
+    def __init__(self, transcript, fallback):
+        self.fallback = fallback
+        self.ai_title = None
+        self.offset = 0
+        self.custom_stamp = None
+        self.custom_title = None
+        self.set_transcript(transcript)
+
+    def set_transcript(self, transcript):
+        self.transcript = transcript
+        self.custom_path = (
+            transcript.with_suffix("") / "custom-title.json" if transcript else None
+        )
+        self.offset = 0
+        self.ai_title = None
+        self.custom_stamp = None
+        self.custom_title = None
+
+    def poll(self):
+        self._poll_ai_title()
+        self._poll_custom_title()
+
+    def _poll_ai_title(self):
+        if self.transcript is None:
+            return
+        try:
+            size = self.transcript.stat().st_size
+        except OSError:
+            return
+        if size < self.offset:
+            self.offset = 0
+        if size == self.offset:
+            return
+        try:
+            with self.transcript.open("rb") as handle:
+                handle.seek(self.offset)
+                chunk = handle.read(size - self.offset)
+        except OSError:
+            return
+        end = chunk.rfind(b"\n")
+        if end < 0:
+            return
+        self.offset += end + 1
+        for line in chunk[:end].split(b"\n"):
+            if b'"ai-title"' not in line:
+                continue
+            try:
+                entry = json.loads(line)
+            except ValueError:
+                continue
+            if not isinstance(entry, dict):
+                continue
+            title = entry.get("aiTitle")
+            if isinstance(title, str) and title.strip():
+                self.ai_title = title.strip()
+
+    def _poll_custom_title(self):
+        if self.custom_path is None:
+            return
+        try:
+            stat = self.custom_path.stat()
+        except OSError:
+            self.custom_title = None
+            self.custom_stamp = None
+            return
+        stamp = (stat.st_mtime_ns, stat.st_size)
+        if stamp == self.custom_stamp:
+            return
+        self.custom_stamp = stamp
+        data = read_json(self.custom_path)
+        title = data.get("customTitle") if isinstance(data, dict) else None
+        self.custom_title = title.strip() if isinstance(title, str) else None
+
+    def text(self):
+        return self.custom_title or self.ai_title or self.fallback
+
+
+def indicator(status, frame):
+    if status == "idle":
+        return IDLE_GLYPH
+    if status == "waiting":
+        return WAITING_GLYPH
+    if status == "shell":
+        return SHELL_FRAMES[frame % len(SHELL_FRAMES)]
+    return BUSY_FRAMES[frame % len(BUSY_FRAMES)]
+
+
+class Pane:
+    def __init__(self, tty):
+        self.fd = os.open(tty, os.O_WRONLY | os.O_NOCTTY)
+        self.last = None
+        self.painted_at = 0.0
+
+    def paint(self, text, force=False):
+        now = time.monotonic()
+        if not force and text == self.last and now - self.painted_at < REPAINT_SECONDS:
+            return
+        self.last = text
+        self.painted_at = now
+        os.write(self.fd, f"\033]2;{text}\007".encode())
+
+
+def truncate(text):
+    if len(text) <= MAX_TITLE_CHARS:
+        return text
+    return text[: MAX_TITLE_CHARS - 1].rstrip() + "…"
+
+
+def run(pid, tty):
+    stopping = {"clean": False}
+
+    def on_term(_signum, _frame):
+        stopping["clean"] = True
+
+    signal.signal(signal.SIGTERM, on_term)
+    signal.signal(signal.SIGINT, on_term)
+
+    session_path = SESSION_DIR / f"{pid}.json"
+    session = read_json(session_path) or {}
+    fallback = Path(session.get("cwd") or os.getcwd()).name or "claude"
+    source = TitleSource(transcript_for(session), fallback)
+    session_id = session.get("sessionId")
+
+    pane = Pane(tty)
+    frame = 0
+    status = session.get("status") or "busy"
+    stamp = None
+    died_at = None
+
+    while True:
+        if stopping["clean"]:
+            pane.paint(truncate(source.text()), force=True)
+            return 0
+        if died_at is not None:
+            if time.monotonic() - died_at > EXIT_GRACE_SECONDS:
+                pane.paint(truncate(f"{ERROR_GLYPH} {source.text()}"), force=True)
+                return 0
+        elif not is_alive(pid):
+            died_at = time.monotonic()
+        else:
+            try:
+                current = session_path.stat()
+                stat_stamp = (current.st_mtime_ns, current.st_size)
+            except OSError:
+                stat_stamp = None
+            if stat_stamp is not None and stat_stamp != stamp:
+                stamp = stat_stamp
+                session = read_json(session_path) or session
+                status = session.get("status") or status
+                if session.get("sessionId") != session_id:
+                    session_id = session.get("sessionId")
+                    source.set_transcript(transcript_for(session))
+            source.poll()
+            pane.paint(truncate(f"{indicator(status, frame)} {source.text()}"))
+        frame += 1
+        time.sleep(FRAME_SECONDS)
+
+
+def pid_file(pid):
+    return RUN_DIR / f"{pid}.pid"
+
+
+def stop_daemon(pid):
+    path = pid_file(pid)
+    try:
+        daemon_pid = int(path.read_text().strip())
+    except (OSError, ValueError):
+        return
+    try:
+        os.kill(daemon_pid, signal.SIGTERM)
+    except OSError:
+        pass
+    path.unlink(missing_ok=True)
+
+
+def start(pid, tty):
+    RUN_DIR.mkdir(parents=True, exist_ok=True)
+    stop_daemon(pid)
+    devnull = subprocess.DEVNULL
+    child = subprocess.Popen(
+        [sys.executable, os.path.abspath(__file__), "run", str(pid), tty],
+        stdin=devnull,
+        stdout=devnull,
+        stderr=devnull,
+        start_new_session=True,
+        close_fds=True,
+    )
+    pid_file(pid).write_text(f"{child.pid}\n")
+
+
+def main(argv):
+    command = argv[1] if len(argv) > 1 else "start"
+    if command == "run":
+        return run(int(argv[2]), argv[3])
+    target = find_claude()
+    if target is None:
+        return 0
+    pid, tty = target
+    if command == "start":
+        start(pid, tty)
+    elif command == "stop":
+        stop_daemon(pid)
+    else:
+        print(f"unknown command: {command}", file=sys.stderr)
+        return 2
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))
