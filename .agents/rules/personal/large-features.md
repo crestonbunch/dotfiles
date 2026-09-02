@@ -33,8 +33,11 @@ small change, a single-file edit, or a question.
 ## 3. Do the parallel work in jj workspaces
 
 - Split the feature into parts that touch different files.
-- Use the `new-workspace` skill for the workspace of each part.
-- Give each subagent one workspace and one part.
+- If pizj mode is active, use `pizj_open_workspace` for each modifying part.
+- Give each workspace agent one concrete deliverable with a repository, base
+  revision, boundary, acceptance checks, and fork policy.
+- Use stacked read-only subagents in the current tab when isolation is not
+  necessary. All agents in one tab use the same jj workspace.
 - Tell each subagent to commit its work into its own revision.
 
 ## 4. Merge the parts into one set of revisions

@@ -31,12 +31,15 @@ files.
 
 ## Starting one
 
-- Use the `new-workspace` skill. It opens a zellij tab with its own session. Do
-  not start the task as a background agent in the current session.
-- The skill picks the workspace name and prints `workspace_path`. Give the agent
-  that exact path. A path that does not exist reads as a permission failure.
+- If pizj mode is active, use `pizj_open_workspace`. It opens a zellij tab with
+  its own session. Do not start modifying work in a background agent.
+- Each zellij tab owns one jj workspace. All panes and agents in the tab use
+  that workspace directory.
+- The tool returns the exact workspace path. Give agents that path.
 - Base a workspace on a fixed revision. Do not base it on a bookmark you will
   keep moving.
+- A workspace agent gets one concrete deliverable. Its fork policy is `deny` by
+  default. It reports newly discovered work to its parent.
 
 ## What is genuinely shared
 
