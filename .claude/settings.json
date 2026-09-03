@@ -115,5 +115,6 @@
       "**Trusted repo**: /Users/creston/Projects/Fotometis, working from the private repo twist-labs/fotometis (github.com/twist-labs/fotometis); confidential material is fine here, but content ported or first read from outside this session's repo is not this repo's own work",
       "**Org-specific CLIs**: jj (Jujutsu VCS, heavily used — 144× in-project, 849× in shell history); xcodebuild, xcrun (macOS build tooling); just (justfile targets: analyze, build, build-release, e2e, fmt, lint, test)"
     ]
-  }
+  },
+  "feedbackDrafts": "off"
 }
