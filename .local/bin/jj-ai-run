@@ -1,0 +1,77 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+profile="${1:?usage: jj-ai-run <commit|pr> <prompt-file> <output-file> [read-dir...]}"
+prompt_file="${2:?missing prompt file}"
+out_file="${3:?missing output file}"
+shift 3
+
+backend="${JJ_AI_BACKEND:-$(jj config get ai.backend 2>/dev/null || true)}"
+backend="${backend:-pi}"
+case "$profile" in
+  commit) model="${JJ_COMMIT_MODEL:-${JJ_AI_MODEL:-}}" ;;
+  pr) model="${JJ_PR_MODEL:-${JJ_AI_MODEL:-}}" ;;
+  *)
+    printf 'unknown AI profile: %s\n' "$profile" >&2
+    exit 1
+    ;;
+esac
+
+case "$backend" in
+  pi)
+    configured_model="$(jj config get ai.pi-model 2>/dev/null || true)"
+    model="${model:-${configured_model:-openai-codex/gpt-5.6-terra}}"
+    printf '==> Drafting with Pi (%s)...\n' "$model" >&2
+    args=(
+      --model "$model"
+      --print
+      --no-session
+      --no-extensions
+      --no-skills
+      --no-prompt-templates
+      --no-context-files
+    )
+    if [[ "$profile" = pr ]]; then
+      args+=(--tools read,grep,find,ls)
+    else
+      args+=(--no-tools)
+    fi
+    pi "${args[@]}" "@$prompt_file" > "$out_file"
+    ;;
+  claude|claude-code)
+    configured_model="$(jj config get ai.claude-model 2>/dev/null || true)"
+    model="${model:-${configured_model:-sonnet}}"
+    printf '==> Drafting with Claude Code (%s)...\n' "$model" >&2
+    args=(
+      --model "$model"
+      --print
+      --settings '{"disableAllHooks":true}'
+    )
+    if [[ "$profile" = pr ]]; then
+      allowed_tools=(
+        Read Grep Glob TodoWrite
+        "Bash(jj log:*)" "Bash(jj diff:*)" "Bash(jj show:*)" "Bash(jj status:*)"
+        "Bash(jj bb:*)" "Bash(jj bs:*)" "Bash(jj file list:*)"
+        "Bash(git log:*)" "Bash(git show:*)" "Bash(git diff:*)" "Bash(git blame:*)"
+        "Bash(gh pr view:*)" "Bash(gh pr diff:*)" "Bash(gh pr list:*)"
+        "Bash(gh issue view:*)" "Bash(gh issue list:*)" "Bash(gh search:*)"
+        "Bash(rg:*)" "Bash(cat:*)" "Bash(head:*)" "Bash(tail:*)"
+        "Bash(ls:*)" "Bash(find:*)" "Bash(wc:*)"
+      )
+      args+=(
+        --strict-mcp-config
+        --permission-mode dontAsk
+        --tools "Read,Grep,Glob,Bash,TodoWrite"
+        --allowedTools "${allowed_tools[@]}"
+      )
+      for dir in "$@"; do
+        [[ -n "$dir" && -d "$dir" ]] && args+=(--add-dir "$dir")
+      done
+    fi
+    claude "${args[@]}" < "$prompt_file" > "$out_file"
+    ;;
+  *)
+    printf 'unknown JJ_AI_BACKEND: %s (expected pi, claude, or claude-code)\n' "$backend" >&2
+    exit 1
+    ;;
+esac

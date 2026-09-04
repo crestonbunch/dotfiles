@@ -1,30 +1,16 @@
 ---
-description: Writing tests (Software Engineering at Google)
+description: Test design and review; Software Engineering at Google
 alwaysApply: true
 ---
 
-# Testing: strive for unchanging tests
+# Testing
 
-A good test never needs to change unless the system's requirements change. Every
-edit to an old test is time not spent on real work. Optimize for that.
+- **Unchanging tests.** Refactors, features, and bug fixes should preserve existing tests. Add coverage for new behavior and missed cases. Update expectations for changed requirements. Refactor breaks a test? Check for behavior changes or the wrong test boundary before editing expectations.
+- **Public APIs.** Test the chosen unit's consumer-facing contract, not every language-public method. Helpers through callers; reusable units can have their own tests.
+- **State over interactions.** Assert results and observable state. Interactions when state testing is impractical or the call itself matters: required effects, expensive-call limits. Prefer state-changing calls; avoid incidental call counts, arguments, and ordering.
+- **Behaviors, not methods.** One behavior per test; clear given/when/then. Names convey action, outcome, and relevant conditions.
+- **No test logic.** Straight-line code; explicit inputs and expected values. No mental computation to find the expected answer. Avoid loops, branches, and derived expectations, even string concatenation. Assertion syntax and clear construction helpers are fine; don't reproduce production logic.
+- **DAMP over DRY.** Complete, concise, self-contained tests. Duplication is fine. Share setup only when clearer; keep behavior-relevant details visible.
+- **Useful failures.** Expected result, actual result, relevant inputs.
 
-- **Test via public APIs.** Invoke the system the way its users would, not
-  through implementation details. Testing internals makes tests brittle.
-- **Test state, not interactions.** Assert on the result the system produces, not
-  the sequence of calls it made on its collaborators. Interaction tests check
-  *how* a result was reached and break when the implementation changes; usually
-  only the *what* matters.
-- **Test behaviors, not methods.** Don't mirror one test per production method —
-  that couples test complexity to code structure. A behavior is one
-  given/when/then unit; a single method may have several behaviors, and one
-  behavior may span several methods.
-- **Structure tests around given/when/then** and keep that structure explicit.
-- **Name tests after the behavior** being tested, not the method.
-- **No logic in tests.** A test should be trivially correct on inspection. Avoid
-  conditionals, loops, and computation; each test handles one concrete set of
-  inputs, so spell them out.
-- **Prefer DAMP over DRY.** Descriptive And Meaningful Phrases beat strict
-  deduplication — a little duplication is fine when it makes a test clearer and
-  self-contained.
-- **Make tests complete and concise**, and **write clear failure messages** that
-  say what was expected versus what happened.
+Sources: *Software Engineering at Google*, [ch. 12](https://abseil.io/resources/swe-book/html/ch12.html) and [ch. 13](https://abseil.io/resources/swe-book/html/ch13.html) (interaction-testing exceptions).

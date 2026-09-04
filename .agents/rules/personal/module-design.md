@@ -1,24 +1,20 @@
 ---
-description: Deep vs. shallow modules (Ousterhout, A Philosophy of Software Design)
+description: Module boundaries and interfaces; John Ousterhout
 alwaysApply: true
 ---
 
-# Module design: prefer deep modules
+# Module design
 
-- Favor **deep modules**: a simple interface hiding a substantial, complex
-  implementation. The best modules give a lot of functionality behind a small
-  interface. Avoid **shallow modules**, whose interface is nearly as complex as
-  their implementation and thus provide little abstraction for the cost they add.
-- Achieve depth through **information hiding** (Parnas): each module encapsulates
-  a few pieces of knowledge, which represent design decisions. That knowledge
-  lives in the module's implementation but does **not** appear in its interface,
-  so it stays invisible to other modules. The less a module exposes, the deeper
-  it is. Watch for the inverse, **information leakage**, where a design decision
-  is reflected in multiple modules and couples them together.
-- Do **not** decompose by the runtime order of operations. Temporal
-  decomposition (a module per step: read, then process, then write) leaks
-  information across modules and produces shallow modules.
-- Instead, decompose by **knowledge**: identify the distinct pieces of knowledge
-  needed to carry out the application's tasks, and design each module to
-  encapsulate one or a few of those pieces. This yields a clean, simple design
-  with deep modules.
+Goal: less complexity and coupling, not more classes or layers.
+
+- **Deep modules.** Much functionality behind a simple interface. Judge benefit against caller learning cost, not line count. Small classes aren't inherently better.
+- **Whole contract = interface.** Behavior, side effects, constraints, signatures, fields. Document what callers need; short signatures can hide complex contracts.
+- **Information hiding.** Each module owns knowledge/design decisions. Expose only what's needed. Private fields don't prevent behavioral or back-door leakage.
+- **Knowledge over execution order.** Don't create a module per step merely because steps run sequentially. Bring shared representation/decision knowledge together. Sequential execution is fine; leaked knowledge is the problem.
+- **Distinct abstractions per layer.** Pass-throughs and shallow wrappers are warning signs. What value and hidden knowledge justify another interface?
+- **Somewhat general-purpose.** Simple API covering current needs beyond one special case. Common operations easy; no speculative features.
+- **Pull complexity downward.** Solve inside the module instead of pushing difficult choices/configuration onto callers. Simple interface over superficially simple implementation. Recovery: see `error-handling.md`.
+
+Boundary questions: unique value? Knowledge enabling it? Minimum exposure?
+
+Sources: Ousterhout, *A Philosophy of Software Design*, ch. 4-8; [CS 190 notes](https://web.stanford.edu/~ouster/cgi-bin/cs190-winter18/lecture.php?topic=modularDesign). Operational paraphrases grounded in the author's notes.

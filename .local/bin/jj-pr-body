@@ -1,23 +1,19 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Draft a PR description with Claude and open it in $EDITOR for review.
-# Shared by jj pr create, jj pr describe, and jj stack create.
-#
+# Draft a PR body, then open it in $EDITOR. Used by jj pr and jj stack.
 # Usage: jj-pr-body <out-file> <revset> <diff-command> [args...]
-#   <revset> names the revisions the PR contains, e.g. 'trunk()..my-bookmark'.
-#   Pass '' to skip it. The revisions supply their commit messages, and their
-#   per-revision Claude logs are offered as files Claude can read when the
-#   commits and the diff do not explain why the change exists.
-#   The diff command runs and its output goes into the prompt last.
-#
-# Environment:
-#   JJ_PR_MODEL          model for the draft (default: opus)
-#   JJ_PR_MAX_DIFF_KB    diff cap in KB before truncation (default: 256)
+# Pass an empty revset to omit PR-range commit descriptions.
+# JJ_PR_MAX_DIFF_KB caps the inline diff (default 256); the full diff stays readable.
+# JJ_AI_BACKEND, JJ_AI_MODEL, and JJ_PR_MODEL configure jj-ai-run.
 
 out="${1:?usage: jj-pr-body <out-file> <revset> <diff-command> [args...]}"
 revset="${2?missing revset (pass '' to skip)}"
 shift 2
+if (( $# == 0 )); then
+  echo "missing diff command" >&2
+  exit 1
+fi
 
 prompt_file="$HOME/.config/jj/PR_DESCRIBE_PROMPT.md"
 if [[ ! -f $prompt_file ]]; then
@@ -25,15 +21,31 @@ if [[ ! -f $prompt_file ]]; then
   exit 1
 fi
 
-# The rule is conditional, so an auto-load is not guaranteed in a --print
-# session. Name the file and make Claude read it.
-rule_file="$HOME/.claude/rules/personal/pull-requests.md"
-if [[ ! -f $rule_file ]]; then
-  printf 'warning: no PR rule at %s, the draft has no structure guidance\n' "$rule_file" >&2
-  rule_file=""
+cap_kb="${JJ_PR_MAX_DIFF_KB:-256}"
+if [[ ! $cap_kb =~ ^[1-9][0-9]{0,6}$ ]]; then
+  echo "JJ_PR_MAX_DIFF_KB must be a positive integer of at most 7 digits" >&2
+  exit 1
+fi
+diff_cap=$(( cap_kb * 1024 ))
+
+context_dir=$(mktemp -d "${TMPDIR:-/tmp}/jj-pr-body.XXXXXX")
+trap 'rm -rf -- "$context_dir"' EXIT
+prompt_input="$context_dir/prompt.md"
+full_diff="$context_dir/full.diff"
+
+# Capture once, without a truncating pipeline that can hide command failures.
+if ! "$@" > "$full_diff"; then
+  echo "diff command failed; no draft generated" >&2
+  exit 1
 fi
 
-repo_root=$(jj root 2>/dev/null || git rev-parse --show-toplevel 2>/dev/null || pwd)
+if repo_root=$(jj root --ignore-working-copy 2>/dev/null); then
+  vcs=jj
+else
+  vcs=git
+  repo_root=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
+fi
+
 template_path=""
 for candidate in \
   .github/PULL_REQUEST_TEMPLATE.md .github/pull_request_template.md \
@@ -45,126 +57,76 @@ for candidate in \
   fi
 done
 
-# The claude-jj-log hook keys one log per change_id, so the logs for a PR are
-# the logs of every revision in its range.
-log_dir=""
-if ws_root=$(jj workspace root 2>/dev/null); then
-  log_dir="$HOME/.local/share/claude-logs/$(basename "$ws_root")-$(printf '%s' "$ws_root" | shasum | cut -c1-8)"
-fi
-
-revs=()
+revisions=""
 if [[ -n $revset ]]; then
-  while IFS= read -r line; do
-    [[ -n $line ]] && revs+=("$line")
-  done < <(jj log --no-graph --ignore-working-copy -r "$revset & ~empty()" \
-    -T 'change_id ++ "\n"' 2>/dev/null || true)
+  revisions=$(jj log --no-graph --ignore-working-copy -r "($revset) & ~empty()" \
+    -T 'change_id ++ "\n"')
 fi
 
-prompt_input=$(mktemp -t jj-pr-body-prompt)
-trap 'rm -f "$prompt_input"' EXIT
+history_file="$context_dir/history.txt"
+if [[ $vcs = jj ]]; then
+  history_revset="ancestors(${revset:-@})"
+  if ! jj log --no-graph --ignore-working-copy --color never \
+    -r "$history_revset" --limit 20 \
+    -T 'change_id.short() ++ " " ++ description.first_line() ++ "\n"' > "$history_file"; then
+    echo "[Recent history unavailable.]" > "$history_file"
+  fi
+elif ! git log -20 --format='%h %s' > "$history_file" 2>/dev/null; then
+  echo "[Recent history unavailable.]" > "$history_file"
+fi
 
 {
   cat "$prompt_file"
   echo
 
-  if [[ -n $rule_file ]]; then
-    echo "## Required reading"
-    echo
-    echo "Read this file before you write anything:"
-    echo
-    printf -- '- %s\n' "$rule_file"
-    echo
-  fi
+  for rule_name in prose pull-requests; do
+    rule_file="$HOME/.agents/rules/personal/$rule_name.md"
+    if [[ -f $rule_file ]]; then
+      if [[ $rule_name = prose ]]; then
+        printf '\n## Prose rules\n\n'
+      else
+        printf '\n## Pull request rules\n\n'
+      fi
+      cat "$rule_file"
+      echo
+    else
+      printf 'warning: no %s rule at %s\n' "$rule_name" "$rule_file" >&2
+    fi
+  done
+
+  printf '\n## Repository\n\nRoot: %s\nRevision range: %s\n' "$repo_root" "${revset:-not supplied}"
 
   if [[ -n $template_path ]]; then
-    echo "## GitHub PR template"
-    echo
+    printf '\n## GitHub PR template\n\n'
     cat "$template_path"
     echo
   fi
 
-  if (( ${#revs[@]} > 0 )); then
-    echo "## Commits"
-    echo
-    for rev in "${revs[@]}"; do
+  if [[ -n $revisions ]]; then
+    printf '\n## Commits\n\n'
+    while IFS= read -r rev; do
+      [[ -n $rev ]] || continue
       printf '### Revision %s\n\n' "$rev"
-      jj log --no-graph --ignore-working-copy -r "$rev" -T 'description' 2>/dev/null
+      jj log --no-graph --ignore-working-copy -r "$rev" -T 'description'
       echo
-    done
+    done <<< "$revisions"
   fi
 
-  if [[ -n $log_dir ]] && (( ${#revs[@]} > 0 )); then
-    printed=0
-    for rev in "${revs[@]}"; do
-      log_file="$log_dir/$rev.md"
-      [[ -f $log_file ]] || continue
-      if (( printed == 0 )); then
-        echo "## Conversation logs"
-        echo
-        echo "One file per revision, from the Claude sessions that wrote it."
-        echo "Read a file only when the commits and the diff leave the reason"
-        echo "for the change unclear."
-        echo
-        printed=1
-      fi
-      printf -- '- %s (%s): %s\n' "$rev" "$(du -h "$log_file" | cut -f1 | tr -d ' ')" "$log_file"
-    done
-    if (( printed == 1 )); then echo; fi
-  fi
-
-  echo "## Diff"
+  printf '\n## Recent history\n\n'
+  cat "$history_file"
+  printf '\n## Diff\n\n'
+  head -c "$diff_cap" "$full_diff"
   echo
-  diff_cap=$(( ${JJ_PR_MAX_DIFF_KB:-256} * 1024 ))
-  # head -c closes the pipe early on a big diff, so SIGPIPE is expected here.
-  diff_out=$("$@" 2>/dev/null | head -c "$diff_cap") || true
-  printf '%s\n' "$diff_out"
-  if (( $(printf '%s' "$diff_out" | wc -c) >= diff_cap )); then
-    echo
-    echo "[diff truncated at ${JJ_PR_MAX_DIFF_KB:-256}KB — read the files directly for the rest]"
+  if (( $(wc -c < "$full_diff") > diff_cap )); then
+    printf '\n[Diff excerpt truncated at %sKB. Full diff: %s]\n' "$cap_kb" "$full_diff"
   fi
 } > "$prompt_input"
 
-# Read-only surface. --tools drops Write and Edit entirely, and --allowedTools
-# is the allow list for Bash. Claude denies anything outside it without a
-# prompt, because --print has nobody to ask. Each rule must stay one argv
-# element, so keep the array quoted.
-allowed_tools=(
-  Read Grep Glob TodoWrite
-  "Bash(jj log:*)" "Bash(jj diff:*)" "Bash(jj show:*)" "Bash(jj status:*)"
-  "Bash(jj bb:*)" "Bash(jj bs:*)" "Bash(jj file list:*)"
-  "Bash(git log:*)" "Bash(git show:*)" "Bash(git diff:*)" "Bash(git blame:*)"
-  "Bash(gh pr view:*)" "Bash(gh pr diff:*)" "Bash(gh pr list:*)"
-  "Bash(gh issue view:*)" "Bash(gh issue list:*)" "Bash(gh search:*)"
-  "Bash(rg:*)" "Bash(cat:*)" "Bash(head:*)" "Bash(tail:*)"
-  "Bash(ls:*)" "Bash(find:*)" "Bash(wc:*)"
-)
-
-# The rule and the logs sit outside the repo. Read reaches them anyway under
-# the current permission defaults, so name them to keep that true if the
-# defaults tighten.
-add_dir_args=()
-if [[ -n $rule_file ]]; then
-  add_dir_args+=(--add-dir "$(dirname "$rule_file")")
-fi
-if [[ -n $log_dir && -d $log_dir ]]; then
-  add_dir_args+=(--add-dir "$log_dir")
-fi
-
-model="${JJ_PR_MODEL:-opus}"
-printf '==> Drafting description with Claude (%s)...\n' "$model" >&2
-CLAUDE_JJ_LOG_ACTIVE=1 claude \
-  --model "$model" \
-  --print \
-  --settings '{"disableAllHooks":true}' \
-  --strict-mcp-config \
-  --permission-mode dontAsk \
-  --tools "Read,Grep,Glob,Bash,TodoWrite" \
-  --allowedTools "${allowed_tools[@]}" \
-  ${add_dir_args[@]+"${add_dir_args[@]}"} \
-  < "$prompt_input" > "$out"
+# Claude needs access to the full diff outside the repo; Pi reads absolute paths.
+read_dirs=("$context_dir")
+jj-ai-run pr "$prompt_input" "$out" ${read_dirs[@]+"${read_dirs[@]}"}
 
 "${EDITOR:-vi}" "$out"
-
 if [[ ! -s $out ]]; then
   echo "empty description" >&2
   exit 1

@@ -1,59 +1,53 @@
 ---
 name: create-jira-ticket
-description: Create Jira tickets from the command line using the Atlassian CLI (acli). Use when the user asks to create, file, open, or log a Jira ticket/issue/task/bug, optionally under an epic or assigned to someone.
+description: Create a Jira ticket with the Atlassian CLI (acli) when the user asks to create, file, open, or log an issue, task, bug, or epic.
 ---
 
-# Create a Jira ticket with acli
+# Create a Jira ticket
 
-`acli` (Atlassian CLI, `/opt/homebrew/bin/acli`) creates Jira work items without needing the MCP or web UI. Faster than MCP for simple ticket creation; use MCP for complex queries/edits.
+Use `acli` when available. Check `command -v acli` and
+`acli jira workitem create --help` before use; flags can vary by version.
+If the CLI is unavailable or unauthenticated, report that and use another
+available Jira tool if appropriate. Do not install tools or change auth without permission.
 
-## Command
+## Create
 
-```
+Confirm the project and issue type from the request or project context.
+Ask when the target is ambiguous. Draft the title and description from the request.
+
+```bash
 acli jira workitem create \
   --project <KEY> \
-  --type <Task|Bug|Story|Epic> \
+  --type <TYPE> \
   --summary "<title>" \
-  --description "<body>" \
-  --assignee '@me' \
-  --parent <EPIC-KEY> \
-  --label <l1,l2>
+  --description "<body>"
 ```
 
-Returns the new work item key and URL, e.g. `✓ Work item SD-775 created: https://duolingo.atlassian.net/browse/SD-775`. Quote the URL back to the user so they can click through.
+Optional flags, only when requested or established by project conventions:
 
-## Key flags
+- `--assignee`: a user, `@me`, or another value supported by CLI help. Do not default to assigning yourself.
+- `--parent`: the confirmed epic or parent key.
+- `--label`: labels in the format supported by CLI help.
+- `--description-file`: use for a long body if supported.
 
-- `--project` — project key (e.g. `SD`, `DLAA`). Required.
-- `--type` — `Task`, `Bug`, `Story`, `Epic`, etc. Required.
-- `--summary` — ticket title. Required.
-- `--description` — body. Supports basic markdown-ish formatting (`*bold*`, backtick code). Use `--description-file` for long bodies or `--from-file` to read summary+description from a file.
-- `--assignee` — accepts `@me`, `default`, an email, or an account ID.
-- `--parent` — parent work item key. Use this to put a Task under an Epic.
-- `--label` — comma-separated label names.
-- `--json` — machine-readable output.
+Quote shell arguments safely. Prefer a description file for bodies with shell metacharacters.
 
-It's `workitem create`, **not** `issue create`. The older `issue` noun does not exist in current acli.
+## Find a named epic
 
-## Finding the parent epic
+Check `acli jira workitem search --help`, then search within the selected project.
+Replace the placeholders before use and escape values for JQL and the shell.
 
-When the user names an epic ("under the Workbench epic"), look up its key before creating:
-
-```
+```bash
 acli jira workitem search \
-  --jql 'project = SD AND type = Epic AND summary ~ "Workbench"' \
+  --jql 'project = "<PROJECT_KEY>" AND type = Epic AND summary ~ "<EPIC_NAME>"' \
   --fields key,summary,status
 ```
 
-`summary ~ "..."` is a fuzzy text match. If multiple epics come back, ask the user which one rather than guessing.
+A text match is not an exact identity. Confirm the intended epic from the results.
+If there are multiple plausible matches or none, ask rather than guess.
 
-## Other useful subcommands
+## Report
 
-- `acli jira workitem view <KEY>` — show a ticket.
-- `acli jira workitem search --jql '<JQL>' --fields key,summary,status` — query tickets. Any valid JQL works.
-- `acli jira workitem create --generate-json` — emit a JSON template for `--from-json`, useful for tickets with many fields or custom field IDs.
-
-## Tips
-
-- Confirm the project key and epic with the user if either is ambiguous — wrong project means the ticket lands somewhere nobody watches.
-- For Duolingo, link returned issue keys as `https://duolingo.atlassian.net/browse/<KEY>` per the team Jira rule.
+Return the created issue key and URL. Use the URL returned by Jira or its configured
+site; do not hardcode a company domain. If creation times out or the result is
+unclear, check whether the issue exists before retrying to avoid duplicates.
