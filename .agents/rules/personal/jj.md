@@ -8,7 +8,7 @@ alwaysApply: true
 - Prefer jj in jj workspaces; otherwise use the repo's VCS.
 - Before edits: check `jj status` and current revision. `jj new` when needed to separate work; don't disrupt another agent's active revision.
 - Prefer one cohesive revision for related changes to the same task. Squash follow-up edits into that revision instead of creating a separate revision for every user prompt. Keep changes separate when they have distinct ownership or should be reviewed independently.
-- On completion, `jj commit` the task's changes with a descriptive message. Don't leave completed edits in an uncommitted working-copy revision. The fresh empty revision left by `jj commit` is fine. Commit only task-owned changes; resolve mixed ownership before finishing.
+- On completion, commit the task's changes with a non-empty descriptive message. Never run `jj commit` on a revision with no changes. Don't leave completed edits in an uncommitted working-copy revision. The fresh empty working-copy revision created after `jj commit` is expected and does not need to be committed. Commit only task-owned changes; resolve mixed ownership before finishing.
 - **Owned** = assigned to this task, no other worker's changes. Current/unpublished does not imply owned.
 - Autonomous describe/split/squash/rebase/abandon: owned, unpublished revisions only; preserve user work and don't affect other agents.
 - Before rewriting: inspect affected descendants and workspace ownership. jj can rewrite descendants automatically.
