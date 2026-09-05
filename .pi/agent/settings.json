@@ -6,6 +6,7 @@
   "packages": [
     "npm:pi-subagents",
     "npm:pi-mcp-adapter",
-    "npm:pi-web-access"
+    "npm:pi-web-access",
+    "/Users/creston/.pi/packages/pi-subagents-zellij"
   ]
 }
