@@ -70,9 +70,6 @@
 !.pi/agent/extensions/
 !.pi/agent/extensions/claude-footer.ts
 !.pi/agent/extensions/zellij-pane-title.ts
-!.pi/packages/
-!.pi/packages/pizj/
-!.pi/packages/pizj/**/*
 
 # scripts
 !.local/

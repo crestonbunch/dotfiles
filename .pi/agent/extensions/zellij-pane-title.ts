@@ -1,7 +1,7 @@
 import type { AssistantMessage } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 
-const BASE_TITLE = process.env.PIZJ_LABEL ?? "pi";
+const BASE_TITLE = "pi";
 const SUCCESS_INDICATOR = "󰄬";
 const ERROR_INDICATOR = "󰅖";
 const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
