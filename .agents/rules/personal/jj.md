@@ -24,4 +24,6 @@ alwaysApply: true
 
 ## Messages
 
+Commit as the configured user only. Never override author/committer identity to credit an agent or another person. No `Co-authored-by`, co-author lists, or attribution trailers.
+
 Repo conventions first. Otherwise: specific imperative subject, ≤70 characters, no trailing punctuation. Body explains motivation absent from diff. Style: `prose.md`.
