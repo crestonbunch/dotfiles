@@ -1,14 +1,19 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Shared logic for jj cc / jj cd: draft a commit message from the jj diff
-# and any conversation log, open in $EDITOR, then apply.
+# Shared logic for jj cc / jj cd: draft a commit message from the jj diff,
+# open it in $EDITOR, then apply it.
 #
-# Usage: jj-claude-describe {describe|commit}
-#   describe — jj describe -m <msg>
-#   commit   — jj commit -m <msg>
+# Usage: jj-ai-describe {describe|commit}
+#   describe: jj describe -m <msg>
+#   commit:   jj commit -m <msg>
+#
+# Environment:
+#   JJ_AI_BACKEND      pi, claude, or claude-code
+#   JJ_AI_MODEL        model for all jj drafts
+#   JJ_COMMIT_MODEL    model override for commit drafts
 
-action="${1:?usage: jj-claude-describe [describe|commit]}"
+action="${1:?usage: jj-ai-describe [describe|commit]}"
 
 diff=$(jj diff -r @ --git)
 if [[ -z $diff ]]; then
@@ -16,14 +21,8 @@ if [[ -z $diff ]]; then
   exit 1
 fi
 
-ws_root=$(jj workspace root 2>/dev/null) || ws_root=""
-ws_name="$(basename "$ws_root")"
-ws_hash="$(printf '%s' "$ws_root" | shasum | cut -c1-8)"
-rev_id=$(jj log --no-graph -r @ -T 'change_id')
-log_file="$HOME/.local/share/claude-logs/${ws_name}-${ws_hash}/$rev_id.md"
-
-prompt_file=$(mktemp -t jj-claude-describe-prompt)
-msg_file=$(mktemp -t jj-claude-describe-msg)
+prompt_file=$(mktemp -t jj-ai-describe-prompt)
+msg_file=$(mktemp -t jj-ai-describe-msg)
 trap 'rm -f "$prompt_file" "$msg_file"' EXIT
 
 {
@@ -31,12 +30,12 @@ cat <<'PROMPT'
 Write a commit message for the following change. Follow these rules exactly:
 
 FORMAT:
-- First line: a short imperative summary of WHAT changed (≤72 chars).
+- First line: a short imperative summary of WHAT changed (70 chars maximum).
   Use a capitalized verb: "Add", "Fix", "Refactor", "Remove", etc.
   No trailing period.
 - If the first line tells the whole story, stop there.
 - Otherwise, add a blank line, then one or more paragraphs explaining
-  WHY this change was made or HOW it works — but only if those details
+  WHY this change was made or HOW it works, but only if those details
   aren't obvious from the diff itself. Wrap every line at 80 characters.
 
 CONTENT GUIDANCE:
@@ -46,20 +45,9 @@ CONTENT GUIDANCE:
 - Don't restate what the diff already shows ("change X from A to B in
   file F"). Instead, explain the motivation or the effect.
 - Mention non-obvious side effects, tradeoffs, or constraints.
-- If a conversation log is provided below, use it to understand the
-  decisions and reasoning behind the change — but don't quote or
-  reference the conversation itself.
-
 OUTPUT:
 - Output ONLY the commit message. No markdown fences, no preamble.
 PROMPT
-
-if [[ -f $log_file ]]; then
-  echo
-  echo "## Conversation log"
-  echo
-  cat "$log_file"
-fi
 
 echo
 echo "## Diff"
@@ -67,8 +55,7 @@ echo
 echo "$diff"
 } > "$prompt_file"
 
-printf '==> Drafting commit message with Claude (sonnet)...\n' >&2
-claude --model sonnet --print --settings '{"disableAllHooks":true}' < "$prompt_file" > "$msg_file"
+jj-ai-run commit "$prompt_file" "$msg_file"
 
 "${EDITOR:-vi}" "$msg_file"
 

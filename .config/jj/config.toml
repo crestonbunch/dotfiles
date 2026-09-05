@@ -53,6 +53,11 @@ log = "present(@) | ancestors((mine() ~ ::trunk()) | @, 2) | present(trunk())"
 [revset-aliases]
 "stack()" = "trunk()..@"
 
+[ai]
+backend = "pi"
+pi-model = "openai-codex/gpt-5.6-terra"
+claude-model = "sonnet"
+
 [aliases]
 # lob: like `jj log` but restricted to bookmarked revisions. Non-bookmarked
 # revisions are elided (shown as `~`).
@@ -269,7 +274,7 @@ Subcommands:
   open       Open the GitHub PR for the nearest bookmark in a browser
   status     Show CI status checks for the nearest bookmark's PR
   create     Create a GitHub PR for the nearest bookmark
-  describe   Draft a PR description with Claude, edit, and update the PR
+  describe   Draft a PR description with the configured AI and update the PR
   edit       Edit the PR title and description in \$EDITOR
   assign     Pick reviewer(s) via fzf and request review on the PR
   comments   Browse review comments and reply to one via $EDITOR
@@ -453,9 +458,8 @@ fi
 
 # pr-create: open a GitHub PR for the nearest bookmark, basing it on the
 # next-nearest bookmark (or repo default if there isn't one). Title comes from
-# the head commit's first description line; body is drafted by Claude from the
-# base..head diff, the commit messages, and the per-revision conversation logs,
-# then opened in $EDITOR for review before posting.
+# the head commit's first description line; the configured AI drafts the body
+# from the base..head diff and commit messages. The editor opens before posting.
 # Extra args are forwarded to `gh pr create`.
 #
 # A bookmark that already has an open PR is left alone, so this is safe to run
@@ -504,8 +508,8 @@ if (( $(jj bs | wc -l | tr -d ' ') > 1 )); then
 fi
 ''', "jj-pr-create"]
 
-# pr-describe: draft a PR description with Claude, open it in $EDITOR for
-# review/edit, then push the result to the PR via `gh pr edit`.
+# pr-describe: draft a PR description with the configured AI, open it in
+# $EDITOR, then push the result to the PR via `gh pr edit`.
 pr-describe = ["util", "exec", "--", "bash", "-c", '''
 set -euo pipefail
 head=$(jj bb | head -n1)
@@ -514,7 +518,7 @@ if ! gh pr view "$head" --json number >/dev/null 2>&1; then
   exit 1
 fi
 # The PR base fixes the revset, so a stacked PR only feeds its own revisions
-# and their conversation logs to the draft.
+# to the draft.
 base=$(gh pr view "$head" --json baseRefName -q .baseRefName 2>/dev/null || true)
 if [[ -n $base ]] && jj log --no-graph --ignore-working-copy -r "$base" -T '""' >/dev/null 2>&1; then
   revset="${base}..${head}"
@@ -991,7 +995,7 @@ esac
 # diff and moves that bookmark onto its own pre-commit fixes. So the PRs are
 # created after every fix is in place, and each PR carries its own fixes.
 #
-# Each new PR costs one Claude draft and one $EDITOR pass, in stack order.
+# Each new PR costs one AI draft and one $EDITOR pass, in stack order.
 stack-create = ["util", "exec", "--", "bash", "-c", '''
 set -euo pipefail
 bookmarks=()
@@ -1467,9 +1471,9 @@ jj git fetch
 jj new 'trunk()'
 ''', "jj-start"]
 
-# cc: claude commit — draft a commit message with Sonnet from the diff and
-# conversation log, open in $EDITOR, then finalize with `jj commit`.
-cc = ["util", "exec", "--", "bash", "-c", "exec jj-claude-describe \"$1\"", "jj-cc", "commit"]
+# cc: draft a commit message with the configured AI, open it in $EDITOR,
+# then finalize with `jj commit`.
+cc = ["util", "exec", "--", "bash", "-c", "exec jj-ai-describe \"$1\"", "jj-cc", "commit"]
 
-# cd: claude describe — same as cc but applies with `jj describe` (stays on @).
-cd = ["util", "exec", "--", "bash", "-c", "exec jj-claude-describe \"$1\"", "jj-cd", "describe"]
+# cd: use the same draft flow with `jj describe` and stay on @.
+cd = ["util", "exec", "--", "bash", "-c", "exec jj-ai-describe \"$1\"", "jj-cd", "describe"]

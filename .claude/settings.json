@@ -9,28 +9,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "~/.local/bin/claude-jj-log log-changes",
-            "timeout": 120,
-            "async": true
-          }
-        ]
-      },
-      {
-        "hooks": [
-          {
-            "type": "command",
             "command": "d=$(jq -r '.cwd // empty' | sed 's:.*/::' | tr -cd '[:alnum:]._ -'); osascript -e \"display notification \\\"${d:-session} finished\\\" with title \\\"Claude Code\\\" sound name \\\"Glass\\\"\" >/dev/null 2>&1 || true",
-            "async": true
-          }
-        ]
-      }
-    ],
-    "UserPromptSubmit": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "~/.local/bin/claude-jj-log log-prompt",
             "async": true
           }
         ]

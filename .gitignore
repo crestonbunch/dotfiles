@@ -80,8 +80,8 @@
 !.local/bin/work
 !.local/bin/work-switch
 !.local/bin/work-jira
-!.local/bin/claude-jj-log
-!.local/bin/jj-claude-describe
+!.local/bin/jj-ai-run
+!.local/bin/jj-ai-describe
 !.local/bin/jj-pr-body
 !.local/bin/jj-pr-new
 !.local/bin/claude-pane-title
