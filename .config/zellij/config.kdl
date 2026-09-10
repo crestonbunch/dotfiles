@@ -350,6 +350,8 @@ default_layout "pi"
 //   - false
 // 
 // mouse_mode false
+
+mouse_scroll_resize false
  
 // Toggle having pane frames around the panes
 // Options:
