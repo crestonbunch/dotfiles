@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { request as httpsRequest } from "node:https";
 import { basename } from "node:path";
 import type { AssistantMessage } from "@earendil-works/pi-ai";
@@ -23,6 +24,8 @@ const ICON = {
 const CODEX_PROVIDER = "openai-codex";
 const CODEX_BASE_URL = "https://chatgpt.com/backend-api";
 const USAGE_REFRESH_INTERVAL_MS = 60_000;
+const SUBAGENT_COST_REQUEST_EVENT = "subagents:cost:v1:request";
+const SUBAGENT_COST_TIMEOUT_MS = 500;
 
 const FILLED = "▰";
 const EMPTY = "▱";
@@ -44,6 +47,11 @@ type Location = {
   revision: string;
   pullRequest?: { number: number; url: string };
 };
+
+type ChildCost =
+  | { status: "loading" }
+  | { status: "available"; cost: number; incomplete: boolean }
+  | { status: "unavailable" };
 
 const formatTokens = (tokens: number): string => {
   if (tokens < 1000) return `${tokens}`;
@@ -207,6 +215,65 @@ export default (pi: ExtensionAPI) => {
   let lastUsageRefresh = 0;
   let usageActive = false;
   let alive = false;
+  let currentCtx: ExtensionContext | undefined;
+  let childCost: ChildCost = { status: "loading" };
+  let childCostRequestVersion = 0;
+  let childCostTimeout: ReturnType<typeof setTimeout> | undefined;
+  let unsubscribeChildCost: (() => void) | undefined;
+
+  const clearChildCostRequest = (): void => {
+    if (childCostTimeout) clearTimeout(childCostTimeout);
+    childCostTimeout = undefined;
+    unsubscribeChildCost?.();
+    unsubscribeChildCost = undefined;
+  };
+
+  const refreshChildCost = (ctx: ExtensionContext): void => {
+    clearChildCostRequest();
+    const requestId = randomUUID();
+    const requestVersion = ++childCostRequestVersion;
+    const sessionId = ctx.sessionManager.getSessionId();
+    unsubscribeChildCost = pi.events.on(`subagents:cost:v1:reply:${requestId}`, (value) => {
+      if (!alive || requestVersion !== childCostRequestVersion || !value || typeof value !== "object") return;
+      const reply = value as {
+        version?: unknown;
+        requestId?: unknown;
+        success?: unknown;
+        data?: {
+          kind?: unknown;
+          version?: unknown;
+          sessionId?: unknown;
+          childUsage?: { cost?: unknown };
+          incomplete?: unknown;
+        };
+      };
+      if (reply.version !== 1 || reply.requestId !== requestId) return;
+      clearChildCostRequest();
+      const reportedCost = reply.data?.childUsage?.cost;
+      if (
+        reply.success === true
+        && reply.data?.kind === "pi-subagents.cost-snapshot"
+        && reply.data.version === 1
+        && reply.data.sessionId === sessionId
+        && typeof reportedCost === "number"
+        && Number.isFinite(reportedCost)
+        && reportedCost >= 0
+        && typeof reply.data.incomplete === "boolean"
+      ) {
+        childCost = { status: "available", cost: reportedCost, incomplete: reply.data.incomplete };
+      } else {
+        childCost = { status: "unavailable" };
+      }
+      requestRender?.();
+    });
+    childCostTimeout = setTimeout(() => {
+      if (!alive || requestVersion !== childCostRequestVersion) return;
+      clearChildCostRequest();
+      childCost = { status: "unavailable" };
+      requestRender?.();
+    }, SUBAGENT_COST_TIMEOUT_MS);
+    pi.events.emit(SUBAGENT_COST_REQUEST_EVENT, { version: 1, requestId, sessionId });
+  };
 
   // pi reaches Codex over a WebSocket by default, so `after_provider_response`
   // never carries the rate-limit headers. Read the limits from the account
@@ -317,6 +384,8 @@ export default (pi: ExtensionAPI) => {
   pi.on("session_start", (_event, ctx) => {
     if (ctx.mode !== "tui") return;
     alive = true;
+    currentCtx = ctx;
+    childCost = { status: "loading" };
 
     ctx.ui.setFooter((tui, theme) => {
       requestRender = () => tui.requestRender();
@@ -367,7 +436,10 @@ export default (pi: ExtensionAPI) => {
               ? `${theme.fg("dim", ICON.input)} ${formatTokens(input)} ${theme.fg("dim", ICON.output)} ${formatTokens(output)}`
               : undefined;
           const costSegment = cost > 0 ? `${theme.fg("dim", ICON.cost)} ${cost.toFixed(2)}` : undefined;
-          const line2Left = join(theme, [contextSegment, tokenSegment, costSegment]);
+          const childCostSegment = childCost.status === "available"
+            ? `sub $${childCost.cost.toFixed(2)}${childCost.incomplete ? "+" : ""}`
+            : childCost.status === "loading" ? "sub …" : "sub n/a";
+          const line2Left = join(theme, [contextSegment, tokenSegment, costSegment, childCostSegment]);
           const line2Right = join(theme, [
             location.bookmark ? `${theme.fg("dim", ICON.branch)} ${location.bookmark}` : undefined,
             pullRequestLink ? `${theme.fg("dim", ICON.pullRequest)} ${pullRequestLink}` : undefined,
@@ -384,16 +456,20 @@ export default (pi: ExtensionAPI) => {
 
     scheduleLocationRefresh(ctx.cwd, true);
     void refreshCodexUsage(ctx);
+    refreshChildCost(ctx);
   });
 
-  pi.on("tool_execution_end", (_event, ctx) => {
-    if (ctx.mode === "tui") scheduleLocationRefresh(ctx.cwd, false);
+  pi.on("tool_execution_end", (event, ctx) => {
+    if (ctx.mode !== "tui") return;
+    scheduleLocationRefresh(ctx.cwd, false);
+    if (event.toolName === "subagent" || event.toolName === "bg_wait") refreshChildCost(ctx);
   });
 
   pi.on("agent_settled", (_event, ctx) => {
     if (ctx.mode !== "tui") return;
     scheduleLocationRefresh(ctx.cwd, true);
     void refreshCodexUsage(ctx);
+    refreshChildCost(ctx);
   });
 
   pi.on("model_select", (_event, ctx) => {
@@ -412,8 +488,16 @@ export default (pi: ExtensionAPI) => {
     requestRender?.();
   });
 
+  const unsubscribeAsyncComplete = pi.events.on("subagent:async-complete", () => {
+    if (alive && currentCtx) refreshChildCost(currentCtx);
+  });
+
   pi.on("session_shutdown", () => {
     alive = false;
+    currentCtx = undefined;
+    childCostRequestVersion += 1;
+    clearChildCostRequest();
+    unsubscribeAsyncComplete();
     if (refreshTimer) clearTimeout(refreshTimer);
     refreshTimer = undefined;
     requestRender = undefined;

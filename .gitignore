@@ -70,6 +70,16 @@
 !.pi/agent/extensions/
 !.pi/agent/extensions/claude-footer.ts
 !.pi/agent/extensions/zellij-pane-title.ts
+!.pi/agent/bin/
+.pi/agent/bin/*
+!.pi/agent/bin/apply-pi-subagents-child-cost.mjs
+!.pi/agent/patches/
+.pi/agent/patches/*
+!.pi/agent/patches/pi-subagents-0.66.0-child-cost-api.patch.b64
+!.pi/agent/tests/
+.pi/agent/tests/*
+!.pi/agent/tests/claude-footer.test.mjs
+!.pi/agent/tests/pi-subagents-child-cost-patch.test.mjs
 
 # scripts
 !.local/
