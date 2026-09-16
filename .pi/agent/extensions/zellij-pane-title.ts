@@ -1,6 +1,9 @@
 import { randomUUID } from "node:crypto";
 import type { AssistantMessage } from "@earendil-works/pi-ai";
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type {
+  ExtensionAPI,
+  ExtensionContext,
+} from "@earendil-works/pi-coding-agent";
 
 const BASE_TITLE = "pi";
 const SUCCESS_INDICATOR = "󰄬";
@@ -20,16 +23,20 @@ export default function zellijTabStatus(pi: ExtensionAPI): void {
   let subagentEventVersion = 0;
   let fleetActive = false;
   const runningSubagents = new Set<string>();
-  const subscriptions: Array<() => void> = [];
+  const subscriptions: (() => void)[] = [];
 
   function clearSpinner(): void {
-    if (timer) clearInterval(timer);
+    if (timer) {
+      clearInterval(timer);
+    }
     timer = undefined;
     frame = 0;
   }
 
   function clearStartupTimer(): void {
-    if (startupTimer) clearTimeout(startupTimer);
+    if (startupTimer) {
+      clearTimeout(startupTimer);
+    }
     startupTimer = undefined;
   }
 
@@ -45,7 +52,9 @@ export default function zellijTabStatus(pi: ExtensionAPI): void {
 
   function showRunning(ctx: ExtensionContext): void {
     clearStartupTimer();
-    if (timer) return;
+    if (timer) {
+      return;
+    }
     const update = (): void => {
       setTitle(ctx, SPINNER_FRAMES[frame % SPINNER_FRAMES.length]);
       frame += 1;
@@ -55,11 +64,20 @@ export default function zellijTabStatus(pi: ExtensionAPI): void {
   }
 
   const updateStatus = (ctx: ExtensionContext): void => {
-    if (!active || ctx.mode !== "tui") return;
-    if (fleetActive || runningSubagents.size > 0 || (!waitingForPrompt && !ctx.isIdle())) {
+    if (!active || ctx.mode !== "tui") {
+      return;
+    }
+    if (
+      fleetActive ||
+      runningSubagents.size > 0 ||
+      (!waitingForPrompt && !ctx.isIdle())
+    ) {
       showRunning(ctx);
     } else {
-      const failed = lastStopReason === "error" || lastStopReason === "aborted" || lastStopReason === "length";
+      const failed =
+        lastStopReason === "error" ||
+        lastStopReason === "aborted" ||
+        lastStopReason === "length";
       showPaused(ctx, !waitingForPrompt && failed);
     }
   };
@@ -68,60 +86,101 @@ export default function zellijTabStatus(pi: ExtensionAPI): void {
     unsubscribeStatus?.();
     const requestId = randomUUID();
     const eventVersion = subagentEventVersion;
-    unsubscribeStatus = pi.events.on(`subagents:rpc:v1:reply:${requestId}`, (data) => {
-      if (!active || !data || typeof data !== "object") return;
-      const reply = data as {
-        version?: unknown;
-        requestId?: unknown;
-        success?: unknown;
-        data?: {
-          fleet?: { version?: unknown; totalActive?: unknown };
-          asyncSnapshot?: { kind?: unknown; version?: unknown; runs?: unknown };
-        };
-      };
-      if (reply.version !== 1 || reply.requestId !== requestId || reply.success !== true || eventVersion !== subagentEventVersion) return;
-      const snapshot = reply.data?.asyncSnapshot;
-      if (snapshot?.kind !== "pi-subagents.async-status-snapshot" || snapshot.version !== 1 || !Array.isArray(snapshot.runs)) return;
-      const fleet = reply.data?.fleet;
-      fleetActive = fleet?.version === 1 && typeof fleet.totalActive === "number" && fleet.totalActive > 0;
-      runningSubagents.clear();
-      for (const run of snapshot.runs) {
-        if (run && typeof run.id === "string" && (run.state === "running" || run.state === "queued")) {
-          runningSubagents.add(run.id);
+    unsubscribeStatus = pi.events.on(
+      `subagents:rpc:v1:reply:${requestId}`,
+      data => {
+        if (!active || !data || typeof data !== "object") {
+          return;
         }
-      }
-      updateStatus(ctx);
-    });
+        const reply = data as {
+          data?: {
+            asyncSnapshot?: {
+              kind?: unknown;
+              runs?: unknown;
+              version?: unknown;
+            };
+            fleet?: { totalActive?: unknown; version?: unknown };
+          };
+          requestId?: unknown;
+          success?: unknown;
+          version?: unknown;
+        };
+        if (
+          reply.version !== 1 ||
+          reply.requestId !== requestId ||
+          reply.success !== true ||
+          eventVersion !== subagentEventVersion
+        ) {
+          return;
+        }
+        const snapshot = reply.data?.asyncSnapshot;
+        if (
+          snapshot?.kind !== "pi-subagents.async-status-snapshot" ||
+          snapshot.version !== 1 ||
+          !Array.isArray(snapshot.runs)
+        ) {
+          return;
+        }
+        const fleet = reply.data?.fleet;
+        fleetActive =
+          fleet?.version === 1 &&
+          typeof fleet.totalActive === "number" &&
+          fleet.totalActive > 0;
+        runningSubagents.clear();
+        for (const run of snapshot.runs) {
+          if (
+            run &&
+            typeof run.id === "string" &&
+            (run.state === "running" || run.state === "queued")
+          ) {
+            runningSubagents.add(run.id);
+          }
+        }
+        updateStatus(ctx);
+      },
+    );
     // The public session-scoped snapshot also recovers reloads and missed events.
     pi.events.emit("subagents:rpc:v1:request", {
-      version: 1,
-      requestId,
       method: "status",
       params: {},
+      requestId,
       source: { extension: "zellij-pane-title" },
+      version: 1,
     });
   };
 
   pi.on("session_start", (_event, ctx) => {
-    if (ctx.mode !== "tui" || !process.env.ZELLIJ) return;
+    if (ctx.mode !== "tui" || !process.env.ZELLIJ) {
+      return;
+    }
     active = true;
     currentCtx = ctx;
     // Track run identities, not child counts: parallel workflows finish as one run.
     subscriptions.push(
-      pi.events.on("subagent:async-started", (data) => {
-        if (!currentCtx || !data || typeof data !== "object") return;
+      pi.events.on("subagent:async-started", data => {
+        if (!currentCtx || !data || typeof data !== "object") {
+          return;
+        }
         const run = data as { id?: unknown; sessionId?: unknown };
-        if (run.sessionId !== currentCtx.sessionManager.getSessionId()) return;
-        if (typeof run.id !== "string" || !run.id) return;
+        if (run.sessionId !== currentCtx.sessionManager.getSessionId()) {
+          return;
+        }
+        if (typeof run.id !== "string" || !run.id) {
+          return;
+        }
         subagentEventVersion += 1;
         runningSubagents.add(run.id);
         updateStatus(currentCtx);
       }),
-      pi.events.on("subagent:async-complete", (data) => {
-        if (!currentCtx || !data || typeof data !== "object") return;
-        const run = data as { runId?: unknown; id?: unknown };
+      pi.events.on("subagent:async-complete", data => {
+        if (!currentCtx || !data || typeof data !== "object") {
+          return;
+        }
+        const run = data as { id?: unknown; runId?: unknown };
         const id = run.runId ?? run.id;
-        if (typeof id !== "string" || !runningSubagents.delete(id)) return;
+        if (typeof id !== "string" || !runningSubagents.delete(id)) {
+          return;
+        }
         subagentEventVersion += 1;
         updateStatus(currentCtx);
       }),
@@ -135,7 +194,9 @@ export default function zellijTabStatus(pi: ExtensionAPI): void {
 
   pi.on("agent_start", (_event, ctx) => {
     lastStopReason = undefined;
-    if (active && ctx.mode === "tui") showRunning(ctx);
+    if (active && ctx.mode === "tui") {
+      showRunning(ctx);
+    }
   });
 
   pi.on("ui_prompt_start", (_event, ctx) => {
@@ -148,7 +209,7 @@ export default function zellijTabStatus(pi: ExtensionAPI): void {
     updateStatus(ctx);
   });
 
-  pi.on("message_end", (event) => {
+  pi.on("message_end", event => {
     if (event.message.role === "assistant") {
       lastStopReason = event.message.stopReason;
     }
@@ -159,10 +220,14 @@ export default function zellijTabStatus(pi: ExtensionAPI): void {
   });
 
   pi.on("session_shutdown", (_event, ctx) => {
-    if (!active || ctx.mode !== "tui") return;
+    if (!active || ctx.mode !== "tui") {
+      return;
+    }
     active = false;
     currentCtx = undefined;
-    if (statusTimer) clearInterval(statusTimer);
+    if (statusTimer) {
+      clearInterval(statusTimer);
+    }
     statusTimer = undefined;
     unsubscribeStatus?.();
     unsubscribeStatus = undefined;
@@ -170,7 +235,9 @@ export default function zellijTabStatus(pi: ExtensionAPI): void {
     lastStopReason = undefined;
     runningSubagents.clear();
     fleetActive = false;
-    for (const unsubscribe of subscriptions.splice(0)) unsubscribe();
+    for (const unsubscribe of subscriptions.splice(0)) {
+      unsubscribe();
+    }
     clearStartupTimer();
     clearSpinner();
     setTitle(ctx);

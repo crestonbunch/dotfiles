@@ -3,18 +3,18 @@
 #              and a link to each.
 set -euo pipefail
 
-if ! command -v acli >/dev/null 2>&1; then
+if ! command -v acli > /dev/null 2>&1; then
   echo "error: acli not found in PATH" >&2
   exit 1
 fi
-if ! command -v jq >/dev/null 2>&1; then
+if ! command -v jq > /dev/null 2>&1; then
   echo "error: jq not found in PATH" >&2
   exit 1
 fi
 
 JQL='assignee = currentUser() AND statusCategory in ("To Do", "In Progress") ORDER BY updated DESC'
 
-site=$(acli jira auth status 2>/dev/null | awk '/Site:/ {print $2; exit}')
+site=$(acli jira auth status 2> /dev/null | awk '/Site:/ {print $2; exit}')
 if [ -z "$site" ]; then
   echo "error: could not determine Atlassian site — run 'acli jira auth login'" >&2
   exit 1
@@ -27,9 +27,13 @@ response=$(acli jira workitem search \
   --json)
 
 if [ -t 1 ]; then
-  B=$'\033[1m'; D=$'\033[2m'; R=$'\033[0m'
+  B=$'\033[1m'
+  D=$'\033[2m'
+  R=$'\033[0m'
 else
-  B=""; D=""; R=""
+  B=""
+  D=""
+  R=""
 fi
 
 echo "$response" | jq -r --arg B "$B" --arg D "$D" --arg R "$R" --arg site "$site" '

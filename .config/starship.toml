@@ -4,33 +4,29 @@ command_timeout = 1000
 disabled = true
 
 [custom.python]
-description = "Python version from the project venv's pyvenv.cfg (hidden when uv.lock exists)"
-shell = ["/bin/sh"]
-when = 'test -f "${VIRTUAL_ENV:-.venv}/pyvenv.cfg" && ! test -f uv.lock'
 command = '''awk -F' *= *' '/^(version_info|version)/ {print $2; exit}' "${VIRTUAL_ENV:-.venv}/pyvenv.cfg"'''
+description = "Python version from the project venv's pyvenv.cfg (hidden when uv.lock exists)"
 format = 'via [🐍 $output]($style) '
+shell = ["/bin/sh"]
 style = "yellow bold"
+when = 'test -f "${VIRTUAL_ENV:-.venv}/pyvenv.cfg" && ! test -f uv.lock'
 
 [custom.uv]
-description = "uv project (with python version from the venv's pyvenv.cfg if present)"
-shell = ["/bin/sh"]
-when = "test -f uv.lock"
 command = '''awk -F' *= *' '/^(version_info|version)/ {print $2; exit}' "${VIRTUAL_ENV:-.venv}/pyvenv.cfg" 2>/dev/null || true'''
+description = "uv project (with python version from the venv's pyvenv.cfg if present)"
 format = 'via [🦄 uv $output]($style) '
+shell = ["/bin/sh"]
 style = "purple bold"
+when = "test -f uv.lock"
 
 [custom.mise]
 description = "Indicator that a local mise config is active"
-shell = ["/bin/sh"]
-when = 'command -v mise >/dev/null 2>&1 && test -n "$(mise config ls --no-header 2>/dev/null)"'
 format = 'via [󰢛 mise]($style) '
+shell = ["/bin/sh"]
 style = "#ff5f87 bold"
+when = 'command -v mise >/dev/null 2>&1 && test -n "$(mise config ls --no-header 2>/dev/null)"'
 
 [custom.jj]
-description = "The current jj status"
-shell = ["/bin/sh"]
-when = "jj --ignore-working-copy root"
-symbol = "⬡ "
 command = '''
 bookmark=$(jj --ignore-working-copy --no-pager bbt 2>/dev/null | head -1)
 jj log --revisions @ --no-graph --ignore-working-copy --color always --limit 1 --template '
@@ -51,6 +47,10 @@ jj log --revisions @ --no-graph --ignore-working-copy --color always --limit 1 -
   )
 '
 '''
+description = "The current jj status"
+shell = ["/bin/sh"]
+symbol = "⬡ "
+when = "jj --ignore-working-copy root"
 
 [aws]
 disabled = true
@@ -59,38 +59,38 @@ disabled = true
 disabled = true
 
 [custom.git_status]
-shell = ["/bin/sh"]
-when = "! jj --ignore-working-copy root"
 command = "starship module git_status"
-style = ""
 description = "Only show git_status if we're not in a jj repo"
+shell = ["/bin/sh"]
+style = ""
+when = "! jj --ignore-working-copy root"
 
 [git_commit]
 disabled = true
 
 [custom.git_commit]
-shell = ["/bin/sh"]
-when = "! jj --ignore-working-copy root"
 command = "starship module git_commit"
-style = ""
 description = "Only show git_commit if we're not in a jj repo"
+shell = ["/bin/sh"]
+style = ""
+when = "! jj --ignore-working-copy root"
 
 [git_metrics]
 disabled = true
 
 [custom.git_metrics]
-shell = ["/bin/sh"]
-when = "! jj --ignore-working-copy root"
 command = "starship module git_metrics"
 description = "Only show git_metrics if we're not in a jj repo"
+shell = ["/bin/sh"]
 style = ""
+when = "! jj --ignore-working-copy root"
 
 [git_branch]
 disabled = true
 
 [custom.git_branch]
-shell = ["/bin/sh"]
-when = "! jj --ignore-working-copy root"
 command = "starship module git_branch"
 description = "Only show git_branch if we're not in a jj repo"
+shell = ["/bin/sh"]
 style = ""
+when = "! jj --ignore-working-copy root"

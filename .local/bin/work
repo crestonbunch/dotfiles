@@ -13,8 +13,8 @@ case "${1:-}" in
     shift
     exec work-jira "$@"
     ;;
-  ""|list) ;;
-  -h|--help)
+  "" | list) ;;
+  -h | --help)
     echo "usage: work [list|switch|jira]"
     exit 0
     ;;
@@ -24,16 +24,16 @@ case "${1:-}" in
     ;;
 esac
 
-if ! command -v gh >/dev/null 2>&1; then
+if ! command -v gh > /dev/null 2>&1; then
   echo "error: gh CLI not found in PATH" >&2
   exit 1
 fi
-if ! command -v jq >/dev/null 2>&1; then
+if ! command -v jq > /dev/null 2>&1; then
   echo "error: jq not found in PATH" >&2
   exit 1
 fi
 
-read -r -d '' QUERY <<'GRAPHQL' || true
+read -r -d '' QUERY << 'GRAPHQL' || true
 query {
   search(query: "is:pr author:@me is:open archived:false", type: ISSUE, first: 100) {
     nodes {
@@ -73,7 +73,7 @@ extras_query=$(echo "$prs_json" | jq -r '
 ')
 
 if [ -n "$extras_query" ]; then
-  extras_response=$(gh api graphql -f query="$extras_query" 2>/dev/null) || extras_response='{"data":{}}'
+  extras_response=$(gh api graphql -f query="$extras_query" 2> /dev/null) || extras_response='{"data":{}}'
 else
   extras_response='{"data":{}}'
 fi
@@ -148,9 +148,13 @@ pr_extras=$(echo "$extras_response" | jq -c --argjson prs "$prs_json" '
 
 # Bold-on / bold-off / dim / reset escape codes (only when stdout is a TTY).
 if [ -t 1 ]; then
-  B=$'\033[1m'; D=$'\033[2m'; R=$'\033[0m'
+  B=$'\033[1m'
+  D=$'\033[2m'
+  R=$'\033[0m'
 else
-  B=""; D=""; R=""
+  B=""
+  D=""
+  R=""
 fi
 
 echo "$prs_json" | jq -r --arg B "$B" --arg D "$D" --arg R "$R" --argjson extras "$pr_extras" '

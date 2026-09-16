@@ -26,7 +26,7 @@ msg_file=$(mktemp -t jj-ai-describe-msg)
 trap 'rm -f "$prompt_file" "$msg_file"' EXIT
 
 {
-cat <<'PROMPT'
+  cat << 'PROMPT'
 Write a commit message for the following change. Follow these rules exactly:
 
 FORMAT:
@@ -49,10 +49,10 @@ OUTPUT:
 - Output ONLY the commit message. No markdown fences, no preamble.
 PROMPT
 
-echo
-echo "## Diff"
-echo
-echo "$diff"
+  echo
+  echo "## Diff"
+  echo
+  echo "$diff"
 } > "$prompt_file"
 
 jj-ai-run commit "$prompt_file" "$msg_file"
@@ -66,9 +66,9 @@ fi
 
 msg="$(cat "$msg_file")"
 
-if [[ "$action" = "describe" ]]; then
+if [[ $action == "describe" ]]; then
   jj describe -m "$msg"
-elif [[ "$action" = "commit" ]]; then
+elif [[ $action == "commit" ]]; then
   jj commit -m "$msg"
 else
   echo "unknown action: $action" >&2

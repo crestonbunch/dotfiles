@@ -2,23 +2,26 @@ import { randomUUID } from "node:crypto";
 import { request as httpsRequest } from "node:https";
 import { basename } from "node:path";
 import type { AssistantMessage } from "@earendil-works/pi-ai";
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type {
+  ExtensionAPI,
+  ExtensionContext,
+} from "@earendil-works/pi-coding-agent";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 
 const ICON = {
-  model: "",
-  effort: "",
+  branch: "",
   context: "",
+  cost: "",
+  directory: "",
+  effort: "",
+  input: "",
+  model: "",
+  output: "",
+  pullRequest: "",
+  reset: "",
+  revision: "⬡",
   session: "",
   week: "",
-  reset: "",
-  directory: "",
-  revision: "⬡",
-  branch: "",
-  pullRequest: "",
-  input: "",
-  output: "",
-  cost: "",
 } as const;
 
 const CODEX_PROVIDER = "openai-codex";
@@ -32,61 +35,79 @@ const EMPTY = "▱";
 const SEPARATOR = " · ";
 
 type Theme = {
-  fg: (color: "dim" | "muted" | "warning" | "error", text: string) => string;
   bold: (text: string) => string;
+  fg: (color: "dim" | "muted" | "warning" | "error", text: string) => string;
 };
 
-type RateLimit = {
-  percent: number;
-  resetsAt?: number;
-  windowSeconds?: number;
-};
+type RateLimit = { percent: number; resetsAt?: number; windowSeconds?: number };
 
 type Location = {
   bookmark: string;
-  revision: string;
   pullRequest?: { number: number; url: string };
+  revision: string;
 };
 
 type ChildCost =
   | { status: "loading" }
-  | { status: "available"; cost: number; incomplete: boolean }
+  | { cost: number; incomplete: boolean; status: "available" }
   | { status: "unavailable" };
 
 const formatTokens = (tokens: number): string => {
-  if (tokens < 1000) return `${tokens}`;
+  if (tokens < 1000) {
+    return `${tokens}`;
+  }
   return `${(tokens / 1000).toFixed(1)}k`;
 };
 
 const formatWindow = (seconds: number | undefined): string => {
-  if (seconds === undefined || seconds <= 0) return "";
-  if (seconds >= 86400) return `${Math.round(seconds / 86400)}d`;
-  if (seconds >= 3600) return `${Math.round(seconds / 3600)}h`;
+  if (seconds === undefined || seconds <= 0) {
+    return "";
+  }
+  if (seconds >= 86400) {
+    return `${Math.round(seconds / 86400)}d`;
+  }
+  if (seconds >= 3600) {
+    return `${Math.round(seconds / 3600)}h`;
+  }
   return `${Math.round(seconds / 60)}m`;
 };
 
 const relativeReset = (resetsAt: number | undefined): string => {
-  if (resetsAt === undefined) return "";
+  if (resetsAt === undefined) {
+    return "";
+  }
   const seconds = Math.max(0, Math.floor(resetsAt - Date.now() / 1000));
-  if (seconds >= 86400) return `${Math.floor(seconds / 86400)}d`;
-  if (seconds >= 3600) return `${Math.floor(seconds / 3600)}h`;
+  if (seconds >= 86400) {
+    return `${Math.floor(seconds / 86400)}d`;
+  }
+  if (seconds >= 3600) {
+    return `${Math.floor(seconds / 3600)}h`;
+  }
   return `${Math.ceil(seconds / 60)}m`;
 };
 
-const join = (theme: Theme, parts: Array<string | undefined>): string =>
-  parts.filter((part): part is string => Boolean(part)).join(theme.fg("dim", SEPARATOR));
+const join = (theme: Theme, parts: (string | undefined)[]): string =>
+  parts
+    .filter((part): part is string => Boolean(part))
+    .join(theme.fg("dim", SEPARATOR));
 
 const bar = (theme: Theme, percent: number, segments: number): string => {
   const boundedPercent = Math.max(0, Math.min(100, percent));
   const filled = Math.round((boundedPercent / 100) * segments);
   const text = FILLED.repeat(filled) + EMPTY.repeat(segments - filled);
-  if (boundedPercent >= 90) return theme.fg("error", text);
-  if (boundedPercent >= 70) return theme.fg("warning", text);
+  if (boundedPercent >= 90) {
+    return theme.fg("error", text);
+  }
+  if (boundedPercent >= 70) {
+    return theme.fg("warning", text);
+  }
   return theme.fg("dim", text);
 };
 
 const align = (left: string, right: string, width: number): string => {
-  if (!right) return truncateToWidth(left, width, "");
+  if (!right) {
+    return truncateToWidth(left, width, "");
+  }
 
   const leftWidth = visibleWidth(left);
   const rightWidth = visibleWidth(right);
@@ -94,16 +115,27 @@ const align = (left: string, right: string, width: number): string => {
     return left + " ".repeat(width - leftWidth - rightWidth) + right;
   }
 
-  if (leftWidth >= width) return truncateToWidth(left, width, "");
+  if (leftWidth >= width) {
+    return truncateToWidth(left, width, "");
+  }
   const availableRight = Math.max(0, width - leftWidth - 1);
   const clippedRight = truncateToWidth(right, availableRight, "");
-  return left + " ".repeat(Math.max(1, width - leftWidth - visibleWidth(clippedRight))) + clippedRight;
+  return (
+    left +
+    " ".repeat(Math.max(1, width - leftWidth - visibleWidth(clippedRight))) +
+    clippedRight
+  );
 };
 
-const parseNumber = (headers: Record<string, string>, names: string[]): number | undefined => {
+const parseNumber = (
+  headers: Record<string, string>,
+  names: string[],
+): number | undefined => {
   for (const name of names) {
     const value = Number.parseFloat(headers[name] ?? "");
-    if (Number.isFinite(value)) return value;
+    if (Number.isFinite(value)) {
+      return value;
+    }
   }
   return undefined;
 };
@@ -116,7 +148,9 @@ const readRateLimit = (
     `x-codex-${prefix}-used-percent`,
     `x-openai-${prefix}-used-percent`,
   ]);
-  if (percent === undefined) return undefined;
+  if (percent === undefined) {
+    return undefined;
+  }
 
   const resetAfter = parseNumber(headers, [
     `x-codex-${prefix}-reset-after-seconds`,
@@ -133,24 +167,39 @@ const readRateLimit = (
 
   return {
     percent,
-    resetsAt: resetAt ?? (resetAfter === undefined ? undefined : Date.now() / 1000 + resetAfter),
+    resetsAt:
+      resetAt ??
+      (resetAfter === undefined ? undefined : Date.now() / 1000 + resetAfter),
     windowSeconds: windowMinutes === undefined ? undefined : windowMinutes * 60,
   };
 };
 
 const readUsageWindow = (value: unknown): RateLimit | undefined => {
-  if (typeof value !== "object" || value === null) return undefined;
+  if (typeof value !== "object" || value === null) {
+    return undefined;
+  }
   const window = value as Record<string, unknown>;
   const percent = window.used_percent;
-  if (typeof percent !== "number") return undefined;
+  if (typeof percent !== "number") {
+    return undefined;
+  }
 
-  const resetAt = typeof window.reset_at === "number" ? window.reset_at : undefined;
-  const resetAfter = typeof window.reset_after_seconds === "number" ? window.reset_after_seconds : undefined;
-  const windowSeconds = typeof window.limit_window_seconds === "number" ? window.limit_window_seconds : undefined;
+  const resetAt =
+    typeof window.reset_at === "number" ? window.reset_at : undefined;
+  const resetAfter =
+    typeof window.reset_after_seconds === "number"
+      ? window.reset_after_seconds
+      : undefined;
+  const windowSeconds =
+    typeof window.limit_window_seconds === "number"
+      ? window.limit_window_seconds
+      : undefined;
 
   return {
     percent,
-    resetsAt: resetAt ?? (resetAfter === undefined ? undefined : Date.now() / 1000 + resetAfter),
+    resetsAt:
+      resetAt ??
+      (resetAfter === undefined ? undefined : Date.now() / 1000 + resetAfter),
     windowSeconds,
   };
 };
@@ -159,11 +208,19 @@ const readUsageWindow = (value: unknown): RateLimit | undefined => {
 // token; the usage endpoint rejects a request without it.
 const codexAccountId = (token: string): string | undefined => {
   const payload = token.split(".")[1];
-  if (!payload) return undefined;
+  if (!payload) {
+    return undefined;
+  }
   try {
-    const claims = JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as Record<string, unknown>;
-    const auth = claims["https://api.openai.com/auth"] as { chatgpt_account_id?: unknown } | undefined;
-    return typeof auth?.chatgpt_account_id === "string" ? auth.chatgpt_account_id : undefined;
+    const claims = JSON.parse(
+      Buffer.from(payload, "base64url").toString("utf8"),
+    ) as Record<string, unknown>;
+    const auth = claims["https://api.openai.com/auth"] as
+      | { chatgpt_account_id?: unknown }
+      | undefined;
+    return typeof auth?.chatgpt_account_id === "string"
+      ? auth.chatgpt_account_id
+      : undefined;
   } catch {
     return undefined;
   }
@@ -171,9 +228,13 @@ const codexAccountId = (token: string): string | undefined => {
 
 // Node's fetch is served a bot-check page by chatgpt.com. A plain https
 // request with the same headers is not.
-const getJson = (url: string, headers: Record<string, string>, timeoutMs: number): Promise<unknown> =>
+const getJson = (
+  url: string,
+  headers: Record<string, string>,
+  timeoutMs: number,
+): Promise<unknown> =>
   new Promise((resolve, reject) => {
-    const req = httpsRequest(url, { headers, timeout: timeoutMs }, (res) => {
+    const req = httpsRequest(url, { headers, timeout: timeoutMs }, res => {
       const chunks: Buffer[] = [];
       res.on("data", (chunk: Buffer) => chunks.push(chunk));
       res.on("end", () => {
@@ -183,8 +244,8 @@ const getJson = (url: string, headers: Record<string, string>, timeoutMs: number
         }
         try {
           resolve(JSON.parse(Buffer.concat(chunks).toString("utf8")));
-        } catch (error) {
-          reject(error);
+        } catch (ex) {
+          reject(ex);
         }
       });
     });
@@ -194,12 +255,19 @@ const getJson = (url: string, headers: Record<string, string>, timeoutMs: number
   });
 
 const rateSegment = (theme: Theme, limit: RateLimit | undefined): string => {
-  if (!limit) return "";
-  const icon = limit.windowSeconds !== undefined && limit.windowSeconds >= 172800 ? ICON.week : ICON.session;
+  if (!limit) {
+    return "";
+  }
+  const icon =
+    limit.windowSeconds !== undefined && limit.windowSeconds >= 172800
+      ? ICON.week
+      : ICON.session;
   const window = formatWindow(limit.windowSeconds);
   const windowText = window ? ` ${theme.fg("muted", window)}` : "";
   const reset = relativeReset(limit.resetsAt);
-  const resetText = reset ? ` ${theme.fg("dim", ICON.reset)} ${theme.fg("dim", reset)}` : "";
+  const resetText = reset
+    ? ` ${theme.fg("dim", ICON.reset)} ${theme.fg("dim", reset)}`
+    : "";
   return `${theme.fg("dim", icon)}${windowText} ${bar(theme, limit.percent, 10)} ${Math.round(limit.percent)}%${resetText}`;
 };
 
@@ -222,7 +290,9 @@ export default (pi: ExtensionAPI) => {
   let unsubscribeChildCost: (() => void) | undefined;
 
   const clearChildCostRequest = (): void => {
-    if (childCostTimeout) clearTimeout(childCostTimeout);
+    if (childCostTimeout) {
+      clearTimeout(childCostTimeout);
+    }
     childCostTimeout = undefined;
     unsubscribeChildCost?.();
     unsubscribeChildCost = undefined;
@@ -233,64 +303,94 @@ export default (pi: ExtensionAPI) => {
     const requestId = randomUUID();
     const requestVersion = ++childCostRequestVersion;
     const sessionId = ctx.sessionManager.getSessionId();
-    unsubscribeChildCost = pi.events.on(`subagents:cost:v1:reply:${requestId}`, (value) => {
-      if (!alive || requestVersion !== childCostRequestVersion || !value || typeof value !== "object") return;
-      const reply = value as {
-        version?: unknown;
-        requestId?: unknown;
-        success?: unknown;
-        data?: {
-          kind?: unknown;
+    unsubscribeChildCost = pi.events.on(
+      `subagents:cost:v1:reply:${requestId}`,
+      value => {
+        if (
+          !alive ||
+          requestVersion !== childCostRequestVersion ||
+          !value ||
+          typeof value !== "object"
+        ) {
+          return;
+        }
+        const reply = value as {
+          data?: {
+            childUsage?: { cost?: unknown };
+            incomplete?: unknown;
+            kind?: unknown;
+            sessionId?: unknown;
+            version?: unknown;
+          };
+          requestId?: unknown;
+          success?: unknown;
           version?: unknown;
-          sessionId?: unknown;
-          childUsage?: { cost?: unknown };
-          incomplete?: unknown;
         };
-      };
-      if (reply.version !== 1 || reply.requestId !== requestId) return;
-      clearChildCostRequest();
-      const reportedCost = reply.data?.childUsage?.cost;
-      if (
-        reply.success === true
-        && reply.data?.kind === "pi-subagents.cost-snapshot"
-        && reply.data.version === 1
-        && reply.data.sessionId === sessionId
-        && typeof reportedCost === "number"
-        && Number.isFinite(reportedCost)
-        && reportedCost >= 0
-        && typeof reply.data.incomplete === "boolean"
-      ) {
-        childCost = { status: "available", cost: reportedCost, incomplete: reply.data.incomplete };
-      } else {
-        childCost = { status: "unavailable" };
-      }
-      requestRender?.();
-    });
+        if (reply.version !== 1 || reply.requestId !== requestId) {
+          return;
+        }
+        clearChildCostRequest();
+        const reportedCost = reply.data?.childUsage?.cost;
+        if (
+          reply.success === true &&
+          reply.data?.kind === "pi-subagents.cost-snapshot" &&
+          reply.data.version === 1 &&
+          reply.data.sessionId === sessionId &&
+          typeof reportedCost === "number" &&
+          Number.isFinite(reportedCost) &&
+          reportedCost >= 0 &&
+          typeof reply.data.incomplete === "boolean"
+        ) {
+          childCost = {
+            cost: reportedCost,
+            incomplete: reply.data.incomplete,
+            status: "available",
+          };
+        } else {
+          childCost = { status: "unavailable" };
+        }
+        requestRender?.();
+      },
+    );
     childCostTimeout = setTimeout(() => {
-      if (!alive || requestVersion !== childCostRequestVersion) return;
+      if (!alive || requestVersion !== childCostRequestVersion) {
+        return;
+      }
       clearChildCostRequest();
       childCost = { status: "unavailable" };
       requestRender?.();
     }, SUBAGENT_COST_TIMEOUT_MS);
-    pi.events.emit(SUBAGENT_COST_REQUEST_EVENT, { version: 1, requestId, sessionId });
+    pi.events.emit(SUBAGENT_COST_REQUEST_EVENT, {
+      requestId,
+      sessionId,
+      version: 1,
+    });
   };
 
   // pi reaches Codex over a WebSocket by default, so `after_provider_response`
   // never carries the rate-limit headers. Read the limits from the account
   // usage endpoint instead.
   const refreshCodexUsage = async (ctx: ExtensionContext): Promise<void> => {
-    if (usageActive || ctx.model?.provider !== CODEX_PROVIDER) return;
+    if (usageActive || ctx.model?.provider !== CODEX_PROVIDER) {
+      return;
+    }
     const now = Date.now();
-    if (now - lastUsageRefresh < USAGE_REFRESH_INTERVAL_MS) return;
+    if (now - lastUsageRefresh < USAGE_REFRESH_INTERVAL_MS) {
+      return;
+    }
     lastUsageRefresh = now;
     usageActive = true;
 
     try {
       const auth = await ctx.modelRegistry.getProviderAuth(CODEX_PROVIDER);
       const token = auth?.auth.apiKey;
-      if (!token) return;
+      if (!token) {
+        return;
+      }
       const accountId = codexAccountId(token);
-      if (!accountId) return;
+      if (!accountId) {
+        return;
+      }
 
       const baseUrl = auth.auth.baseUrl ?? CODEX_BASE_URL;
       const usage = (await getJson(
@@ -303,7 +403,9 @@ export default (pi: ExtensionAPI) => {
         },
         5000,
       )) as { rate_limit?: Record<string, unknown> };
-      if (!alive) return;
+      if (!alive) {
+        return;
+      }
 
       const rateLimit = usage.rate_limit ?? {};
       sessionLimit = readUsageWindow(rateLimit.primary_window) ?? sessionLimit;
@@ -316,7 +418,10 @@ export default (pi: ExtensionAPI) => {
     }
   };
 
-  const refreshLocation = async (cwd: string, includePullRequest: boolean): Promise<void> => {
+  const refreshLocation = async (
+    cwd: string,
+    includePullRequest: boolean,
+  ): Promise<void> => {
     if (refreshActive) {
       refreshAgain = true;
       return;
@@ -325,31 +430,63 @@ export default (pi: ExtensionAPI) => {
 
     try {
       const [bookmarkResult, revisionResult] = await Promise.all([
-        pi.exec("jj", ["--ignore-working-copy", "--no-pager", "bbt"], { cwd, timeout: 2000 }),
+        pi.exec("jj", ["--ignore-working-copy", "--no-pager", "bbt"], {
+          cwd,
+          timeout: 2000,
+        }),
         pi.exec(
           "jj",
-          ["--ignore-working-copy", "--no-pager", "log", "--no-graph", "-r", "@", "-T", "change_id.shortest(8)"],
+          [
+            "--ignore-working-copy",
+            "--no-pager",
+            "log",
+            "--no-graph",
+            "-r",
+            "@",
+            "-T",
+            "change_id.shortest(8)",
+          ],
           { cwd, timeout: 2000 },
         ),
       ]);
-      if (!alive) return;
+      if (!alive) {
+        return;
+      }
 
-      const bookmark = bookmarkResult.code === 0 ? (bookmarkResult.stdout.split("\n")[0] ?? "").trim() : "";
-      const revision = revisionResult.code === 0 ? revisionResult.stdout.trim() : "";
+      const bookmark =
+        bookmarkResult.code === 0
+          ? (bookmarkResult.stdout.split("\n")[0] ?? "").trim()
+          : "";
+      const revision =
+        revisionResult.code === 0 ? revisionResult.stdout.trim() : "";
       const next: Location = { bookmark, revision };
 
       const now = Date.now();
-      if (includePullRequest && bookmark && now - lastPullRequestRefresh >= 30_000) {
+      if (
+        includePullRequest &&
+        bookmark &&
+        now - lastPullRequestRefresh >= 30_000
+      ) {
         lastPullRequestRefresh = now;
-        const result = await pi.exec("gh", ["pr", "view", bookmark, "--json", "number,url"], {
-          cwd,
-          timeout: 5000,
-        });
+        const result = await pi.exec(
+          "gh",
+          ["pr", "view", bookmark, "--json", "number,url"],
+          { cwd, timeout: 5000 },
+        );
         if (result.code === 0) {
           try {
-            const pullRequest = JSON.parse(result.stdout) as { number?: unknown; url?: unknown };
-            if (typeof pullRequest.number === "number" && typeof pullRequest.url === "string") {
-              next.pullRequest = { number: pullRequest.number, url: pullRequest.url };
+            const pullRequest = JSON.parse(result.stdout) as {
+              number?: unknown;
+              url?: unknown;
+            };
+            if (
+              typeof pullRequest.number === "number" &&
+              typeof pullRequest.url === "string"
+            ) {
+              next.pullRequest = {
+                number: pullRequest.number,
+                url: pullRequest.url,
+              };
             }
           } catch {}
         }
@@ -357,11 +494,15 @@ export default (pi: ExtensionAPI) => {
         next.pullRequest = location.pullRequest;
       }
 
-      if (!alive) return;
+      if (!alive) {
+        return;
+      }
       location = next;
       requestRender?.();
     } catch {
-      if (!alive) return;
+      if (!alive) {
+        return;
+      }
       location = { bookmark: "", revision: "" };
       requestRender?.();
     } finally {
@@ -373,8 +514,13 @@ export default (pi: ExtensionAPI) => {
     }
   };
 
-  const scheduleLocationRefresh = (cwd: string, includePullRequest: boolean): void => {
-    if (refreshTimer) clearTimeout(refreshTimer);
+  const scheduleLocationRefresh = (
+    cwd: string,
+    includePullRequest: boolean,
+  ): void => {
+    if (refreshTimer) {
+      clearTimeout(refreshTimer);
+    }
     refreshTimer = setTimeout(() => {
       refreshTimer = undefined;
       void refreshLocation(cwd, includePullRequest);
@@ -382,7 +528,9 @@ export default (pi: ExtensionAPI) => {
   };
 
   pi.on("session_start", (_event, ctx) => {
-    if (ctx.mode !== "tui") return;
+    if (ctx.mode !== "tui") {
+      return;
+    }
     alive = true;
     currentCtx = ctx;
     childCost = { status: "loading" };
@@ -391,16 +539,21 @@ export default (pi: ExtensionAPI) => {
       requestRender = () => tui.requestRender();
 
       return {
-        invalidate: () => {},
         dispose: () => {
           requestRender = undefined;
         },
+        invalidate: () => {},
         render: (width: number): string[] => {
           let input = 0;
           let output = 0;
           let cost = 0;
           for (const entry of ctx.sessionManager.getEntries()) {
-            if (entry.type !== "message" || entry.message.role !== "assistant") continue;
+            if (
+              entry.type !== "message" ||
+              entry.message.role !== "assistant"
+            ) {
+              continue;
+            }
             const message = entry.message as AssistantMessage;
             input += message.usage.input;
             output += message.usage.output;
@@ -409,7 +562,8 @@ export default (pi: ExtensionAPI) => {
 
           const context = ctx.getContextUsage();
           const contextPercent = context?.percent;
-          const contextWindow = context?.contextWindow ?? ctx.model?.contextWindow;
+          const contextWindow =
+            context?.contextWindow ?? ctx.model?.contextWindow;
           const model = ctx.model?.name ?? ctx.model?.id ?? "unknown";
           const thinking = ctx.model?.reasoning ? ctx.thinkingLevel : undefined;
           const directory = basename(ctx.cwd);
@@ -420,35 +574,61 @@ export default (pi: ExtensionAPI) => {
 
           const line1Left = join(theme, [
             `${theme.fg("dim", ICON.model)} ${theme.bold(model)}`,
-            thinking ? `${theme.fg("dim", ICON.effort)} ${thinking}` : undefined,
+            thinking
+              ? `${theme.fg("dim", ICON.effort)} ${thinking}`
+              : undefined,
           ]);
           const line1Right = join(theme, [
             `${theme.fg("dim", ICON.directory)} ${directory}`,
-            location.revision ? theme.fg("dim", `${ICON.revision} ${location.revision}`) : undefined,
+            location.revision
+              ? theme.fg("dim", `${ICON.revision} ${location.revision}`)
+              : undefined,
           ]);
 
           const contextSegment =
-            contextPercent !== undefined && contextPercent !== null && contextWindow
+            contextPercent !== undefined &&
+            contextPercent !== null &&
+            contextWindow
               ? `${theme.fg("dim", ICON.context)} ${bar(theme, contextPercent, 5)} ${Math.round(contextPercent)}% ${theme.fg("dim", `${Math.floor(contextWindow / 1000)}k`)}`
               : undefined;
           const tokenSegment =
             input > 0 || output > 0
               ? `${theme.fg("dim", ICON.input)} ${formatTokens(input)} ${theme.fg("dim", ICON.output)} ${formatTokens(output)}`
               : undefined;
-          const costSegment = cost > 0 ? `${theme.fg("dim", ICON.cost)} ${cost.toFixed(2)}` : undefined;
-          const childCostSegment = childCost.status === "available"
-            ? `sub $${childCost.cost.toFixed(2)}${childCost.incomplete ? "+" : ""}`
-            : childCost.status === "loading" ? "sub …" : "sub n/a";
-          const line2Left = join(theme, [contextSegment, tokenSegment, costSegment, childCostSegment]);
+          const costSegment =
+            cost > 0
+              ? `${theme.fg("dim", ICON.cost)} ${cost.toFixed(2)}`
+              : undefined;
+          const childCostSegment =
+            childCost.status === "available"
+              ? `sub $${childCost.cost.toFixed(2)}${childCost.incomplete ? "+" : ""}`
+              : childCost.status === "loading"
+                ? "sub …"
+                : "sub n/a";
+          const line2Left = join(theme, [
+            contextSegment,
+            tokenSegment,
+            costSegment,
+            childCostSegment,
+          ]);
           const line2Right = join(theme, [
-            location.bookmark ? `${theme.fg("dim", ICON.branch)} ${location.bookmark}` : undefined,
-            pullRequestLink ? `${theme.fg("dim", ICON.pullRequest)} ${pullRequestLink}` : undefined,
+            location.bookmark
+              ? `${theme.fg("dim", ICON.branch)} ${location.bookmark}`
+              : undefined,
+            pullRequestLink
+              ? `${theme.fg("dim", ICON.pullRequest)} ${pullRequestLink}`
+              : undefined,
           ]);
 
-          const lines = [align(line1Left, line1Right, width), align(line2Left, line2Right, width)];
+          const lines = [
+            align(line1Left, line1Right, width),
+            align(line2Left, line2Right, width),
+          ];
           const session = rateSegment(theme, sessionLimit);
           const week = rateSegment(theme, weekLimit);
-          if (session || week) lines.push(align(session, week, width));
+          if (session || week) {
+            lines.push(align(session, week, width));
+          }
           return lines;
         },
       };
@@ -460,13 +640,19 @@ export default (pi: ExtensionAPI) => {
   });
 
   pi.on("tool_execution_end", (event, ctx) => {
-    if (ctx.mode !== "tui") return;
+    if (ctx.mode !== "tui") {
+      return;
+    }
     scheduleLocationRefresh(ctx.cwd, false);
-    if (event.toolName === "subagent" || event.toolName === "bg_wait") refreshChildCost(ctx);
+    if (event.toolName === "subagent" || event.toolName === "bg_wait") {
+      refreshChildCost(ctx);
+    }
   });
 
   pi.on("agent_settled", (_event, ctx) => {
-    if (ctx.mode !== "tui") return;
+    if (ctx.mode !== "tui") {
+      return;
+    }
     scheduleLocationRefresh(ctx.cwd, true);
     void refreshCodexUsage(ctx);
     refreshChildCost(ctx);
@@ -479,18 +665,26 @@ export default (pi: ExtensionAPI) => {
   });
   pi.on("thinking_level_select", () => requestRender?.());
 
-  pi.on("after_provider_response", (event) => {
+  pi.on("after_provider_response", event => {
     const headers = Object.fromEntries(
-      Object.entries(event.headers).map(([name, value]) => [name.toLowerCase(), value]),
+      Object.entries(event.headers).map(([name, value]) => [
+        name.toLowerCase(),
+        value,
+      ]),
     );
     sessionLimit = readRateLimit(headers, "primary") ?? sessionLimit;
     weekLimit = readRateLimit(headers, "secondary") ?? weekLimit;
     requestRender?.();
   });
 
-  const unsubscribeAsyncComplete = pi.events.on("subagent:async-complete", () => {
-    if (alive && currentCtx) refreshChildCost(currentCtx);
-  });
+  const unsubscribeAsyncComplete = pi.events.on(
+    "subagent:async-complete",
+    () => {
+      if (alive && currentCtx) {
+        refreshChildCost(currentCtx);
+      }
+    },
+  );
 
   pi.on("session_shutdown", () => {
     alive = false;
@@ -498,7 +692,9 @@ export default (pi: ExtensionAPI) => {
     childCostRequestVersion += 1;
     clearChildCostRequest();
     unsubscribeAsyncComplete();
-    if (refreshTimer) clearTimeout(refreshTimer);
+    if (refreshTimer) {
+      clearTimeout(refreshTimer);
+    }
     refreshTimer = undefined;
     requestRender = undefined;
   });

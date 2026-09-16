@@ -4,12 +4,13 @@
 set -euo pipefail
 
 for cmd in gh jq fzf jj zellij; do
-  command -v "$cmd" >/dev/null 2>&1 || {
-    echo "error: $cmd not found in PATH" >&2; exit 1;
+  command -v "$cmd" > /dev/null 2>&1 || {
+    echo "error: $cmd not found in PATH" >&2
+    exit 1
   }
 done
 
-read -r -d '' QUERY <<'GRAPHQL' || true
+read -r -d '' QUERY << 'GRAPHQL' || true
 query {
   search(query: "is:pr author:@me is:open archived:false", type: ISSUE, first: 100) {
     nodes {
@@ -58,16 +59,16 @@ pick=$(
       ]
     | @tsv
   ' | fzf \
-      --delimiter=$'\t' \
-      --with-nth=3.. \
-      --no-multi \
-      --prompt='PR > ' \
-      --header='enter: switch | esc: cancel'
+    --delimiter=$'\t' \
+    --with-nth=3.. \
+    --no-multi \
+    --prompt='PR > ' \
+    --header='enter: switch | esc: cancel'
 )
 
 [ -z "$pick" ] && exit 0
 
-IFS=$'\t' read -r repo branch _ <<<"$pick"
+IFS=$'\t' read -r repo branch _ <<< "$pick"
 repo_dir="$HOME/$repo"
 session_name=$(basename "$repo_dir" | tr . _)
 
@@ -80,10 +81,10 @@ fi
 # then fetch + remote-tracking. Stay in subshell so the caller's cwd is unaffected.
 checkout() (
   cd "$repo_dir"
-  if jj edit "$branch" 2>/dev/null; then return 0; fi
-  if jj edit "${branch}@origin" 2>/dev/null; then return 0; fi
+  if jj edit "$branch" 2> /dev/null; then return 0; fi
+  if jj edit "${branch}@origin" 2> /dev/null; then return 0; fi
   echo "→ fetching '$branch' from origin..." >&2
-  jj git fetch --branch "$branch" >/dev/null 2>&1 || jj git fetch >/dev/null 2>&1 || true
+  jj git fetch --branch "$branch" > /dev/null 2>&1 || jj git fetch > /dev/null 2>&1 || true
   jj edit "${branch}@origin"
 )
 

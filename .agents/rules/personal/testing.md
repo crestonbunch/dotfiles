@@ -13,4 +13,4 @@ alwaysApply: true
 - **DAMP over DRY.** Complete, concise, self-contained tests. Duplication is fine. Share setup only when clearer; keep behavior-relevant details visible.
 - **Useful failures.** Expected result, actual result, relevant inputs.
 
-Sources: *Software Engineering at Google*, [ch. 12](https://abseil.io/resources/swe-book/html/ch12.html) and [ch. 13](https://abseil.io/resources/swe-book/html/ch13.html) (interaction-testing exceptions).
+Sources: _Software Engineering at Google_, [ch. 12](https://abseil.io/resources/swe-book/html/ch12.html) and [ch. 13](https://abseil.io/resources/swe-book/html/ch13.html) (interaction-testing exceptions).

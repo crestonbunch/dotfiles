@@ -45,16 +45,24 @@ DOT=$(printf '\xc2\xb7')            # middle dot U+00B7
 # bar carries meaningful color; other glyphs are dimmed.
 c() { printf '\033[%sm' "$1"; }
 ESC=$(printf '\033')
-RESET=$(c 0); BOLD=$(c 1); DIM=$(c 2)
-RED=$(c 31); GREEN=$(c 32); YELLOW=$(c 33); ORANGE=$(c '38;5;208'); GRAY=$(c '38;5;244')
+RESET=$(c 0)
+BOLD=$(c 1)
+DIM=$(c 2)
+RED=$(c 31)
+GREEN=$(c 32)
+YELLOW=$(c 33)
+ORANGE=$(c '38;5;208')
+GRAY=$(c '38;5;244')
 SEP=" ${DIM}${DOT}${RESET} "
 
 # Colored parallelogram bar: $1 = integer percentage, $2 = segment count. Stays
 # gray at normal usage; only takes on color as it nears the limit.
 mkbar() {
-  p="$1"; n="$2"
+  p="$1"
+  n="$2"
   filled=$(awk -v p="$p" -v n="$n" 'BEGIN{f=int(p/(100/n)+0.5); if(f>n)f=n; if(f<0)f=0; print f}')
-  bar=""; i=0
+  bar=""
+  i=0
   while [ "$i" -lt "$n" ]; do
     if [ "$i" -lt "$filled" ]; then bar="${bar}${BLK}"; else bar="${bar}${LT}"; fi
     i=$((i + 1))
@@ -74,11 +82,13 @@ fi
 # Time until a Unix epoch reset, as a short relative label (45m, 2h, 3d).
 rel_reset() {
   [ -n "$1" ] || return 0
-  d=$(( $1 - $(date +%s) ))
+  d=$(($1 - $(date +%s)))
   [ "$d" -lt 0 ] && d=0
-  if [ "$d" -ge 86400 ]; then echo "$((d / 86400))d"
-  elif [ "$d" -ge 3600 ]; then echo "$((d / 3600))h"
-  else echo "$(( (d + 59) / 60 ))m"; fi
+  if [ "$d" -ge 86400 ]; then
+    echo "$((d / 86400))d"
+  elif [ "$d" -ge 3600 ]; then
+    echo "$((d / 3600))h"
+  else echo "$(((d + 59) / 60))m"; fi
 }
 
 # Rate-limit gauges: 5-hour session + 7-day weekly usage. Pro/Max only, and each
@@ -122,7 +132,7 @@ vim_seg=""
 advisor=""
 for f in "$cwd/.claude/settings.local.json" "$cwd/.claude/settings.json" "$HOME/.claude/settings.json"; do
   [ -f "$f" ] || continue
-  advisor=$(jq -r '.advisorModel // empty' "$f" 2>/dev/null)
+  advisor=$(jq -r '.advisorModel // empty' "$f" 2> /dev/null)
   [ -n "$advisor" ] && break
 done
 advisor_seg=""
@@ -134,10 +144,11 @@ dir=""
 # jj: nearest bookmark down to (and including) trunk via `jj bbt`, plus the
 # current head change id. `bbt` guarantees trunk shows when there's no working
 # bookmark; both calls are read-only.
-jj_branch=""; jj_rev=""
-if [ -n "$cwd" ] && command -v jj >/dev/null 2>&1; then
-  jj_branch=$(jj --ignore-working-copy --no-pager bbt 2>/dev/null | head -1)
-  jj_rev=$(jj --ignore-working-copy --no-pager log --no-graph -r @ -T 'change_id.shortest(8)' 2>/dev/null)
+jj_branch=""
+jj_rev=""
+if [ -n "$cwd" ] && command -v jj > /dev/null 2>&1; then
+  jj_branch=$(jj --ignore-working-copy --no-pager bbt 2> /dev/null | head -1)
+  jj_rev=$(jj --ignore-working-copy --no-pager log --no-graph -r @ -T 'change_id.shortest(8)' 2> /dev/null)
 fi
 
 # GitHub PR: same bookmark `jj pr status` uses (nearest bookmark, i.e. the top
@@ -145,40 +156,40 @@ fi
 # per-repo/bookmark file and refreshed in a detached background job — the
 # statusline always renders from the last cached value instead of blocking.
 pr_seg=""
-if [ -n "$cwd" ] && [ -n "$jj_branch" ] && command -v gh >/dev/null 2>&1; then
+if [ -n "$cwd" ] && [ -n "$jj_branch" ] && command -v gh > /dev/null 2>&1; then
   cache_key=$(printf '%s' "${cwd}:${jj_branch}" | shasum | awk '{print $1}')
   cache_file="/tmp/claude-statusline-pr-${cache_key}.json"
   now=$(date +%s)
   mtime=0
   if [ -f "$cache_file" ]; then
-    mtime=$(stat -f %m "$cache_file" 2>/dev/null || stat -c %Y "$cache_file" 2>/dev/null || echo 0)
+    mtime=$(stat -f %m "$cache_file" 2> /dev/null || stat -c %Y "$cache_file" 2> /dev/null || echo 0)
   fi
   refreshing_age=9999
   if [ -f "$cache_file.refreshing" ]; then
-    refreshing_mtime=$(stat -f %m "$cache_file.refreshing" 2>/dev/null || stat -c %Y "$cache_file.refreshing" 2>/dev/null || echo 0)
+    refreshing_mtime=$(stat -f %m "$cache_file.refreshing" 2> /dev/null || stat -c %Y "$cache_file.refreshing" 2> /dev/null || echo 0)
     refreshing_age=$((now - refreshing_mtime))
   fi
   # Skip the refresh if one is already in flight (marker younger than 30s —
   # older markers are treated as an abandoned/crashed job and retried).
   if [ $((now - mtime)) -ge 30 ] && [ "$refreshing_age" -ge 30 ]; then
-    touch "$cache_file.refreshing" 2>/dev/null
+    touch "$cache_file.refreshing" 2> /dev/null
     (
-      cd "$cwd" 2>/dev/null || exit 0
+      cd "$cwd" 2> /dev/null || exit 0
       # On failure, leave any existing cache alone rather than clobbering
       # known-good data with an empty result from a transient error.
-      if gh pr view "$jj_branch" --json number,url 2>/dev/null > "${cache_file}.tmp"; then
+      if gh pr view "$jj_branch" --json number,url 2> /dev/null > "${cache_file}.tmp"; then
         mv "${cache_file}.tmp" "$cache_file"
       else
         rm -f "${cache_file}.tmp"
         [ -f "$cache_file" ] || echo '{}' > "$cache_file"
       fi
       rm -f "$cache_file.refreshing"
-    ) </dev/null >/dev/null 2>&1 &
-    disown 2>/dev/null || true
+    ) < /dev/null > /dev/null 2>&1 &
+    disown 2> /dev/null || true
   fi
   if [ -f "$cache_file" ]; then
-    pr_number=$(jq -r '.number // empty' "$cache_file" 2>/dev/null)
-    pr_url=$(jq -r '.url // empty' "$cache_file" 2>/dev/null)
+    pr_number=$(jq -r '.number // empty' "$cache_file" 2> /dev/null)
+    pr_url=$(jq -r '.url // empty' "$cache_file" 2> /dev/null)
     if [ -n "$pr_number" ] && [ -n "$pr_url" ]; then
       LINK_OPEN=$(printf '\033]8;;%s\033\\' "$pr_url")
       LINK_CLOSE=$(printf '\033]8;;\033\\')
@@ -205,7 +216,7 @@ join() {
 vlen() {
   stripped=$(printf '%s' "$1" | sed "s/${ESC}\[[0-9;]*m//g" | sed "s/${ESC}\]8;;[^${ESC}]*${ESC}\\\\//g")
   without=${stripped//"$GL_REV"/}
-  printf '%s' "$(( ${#stripped} + ${#stripped} - ${#without} ))"
+  printf '%s' "$((${#stripped} + ${#stripped} - ${#without}))"
 }
 
 # $COLUMNS is the raw terminal width, but Claude Code renders the statusline
@@ -235,8 +246,8 @@ right=$(join \
 
 if [ -z "$right" ]; then
   line1="$left"
-elif [ -n "${COLUMNS:-}" ] && [ "${COLUMNS:-0}" -gt 0 ] 2>/dev/null; then
-  pad=$(( COLUMNS - WIDTH_MARGIN - LINE1_RIGHT_SHIFT - $(vlen "$left") - $(vlen "$right") - 1 ))
+elif [ -n "${COLUMNS:-}" ] && [ "${COLUMNS:-0}" -gt 0 ] 2> /dev/null; then
+  pad=$((COLUMNS - WIDTH_MARGIN - LINE1_RIGHT_SHIFT - $(vlen "$left") - $(vlen "$right") - 1))
   [ "$pad" -lt 1 ] && pad=1
   line1=$(printf '%s%*s%s' "$left" "$pad" "" "$right")
 else
@@ -253,8 +264,8 @@ line2right=$(join \
 
 if [ -z "$line2right" ]; then
   line2="$line2left"
-elif [ -n "${COLUMNS:-}" ] && [ "${COLUMNS:-0}" -gt 0 ] 2>/dev/null; then
-  pad=$(( COLUMNS - WIDTH_MARGIN - LINE2_RIGHT_SHIFT - $(vlen "$line2left") - $(vlen "$line2right") - 1 ))
+elif [ -n "${COLUMNS:-}" ] && [ "${COLUMNS:-0}" -gt 0 ] 2> /dev/null; then
+  pad=$((COLUMNS - WIDTH_MARGIN - LINE2_RIGHT_SHIFT - $(vlen "$line2left") - $(vlen "$line2right") - 1))
   [ "$pad" -lt 1 ] && pad=1
   line2=$(printf '%s%*s%s' "$line2left" "$pad" "" "$line2right")
 else
@@ -270,8 +281,8 @@ elif [ -z "$week_seg" ]; then
   line3="$sess_seg"
 elif [ -z "$sess_seg" ]; then
   line3="$week_seg"
-elif [ -n "${COLUMNS:-}" ] && [ "${COLUMNS:-0}" -gt 0 ] 2>/dev/null; then
-  pad=$(( COLUMNS - WIDTH_MARGIN - LINE3_RIGHT_SHIFT - $(vlen "$sess_seg") - $(vlen "$week_seg") - 1 ))
+elif [ -n "${COLUMNS:-}" ] && [ "${COLUMNS:-0}" -gt 0 ] 2> /dev/null; then
+  pad=$((COLUMNS - WIDTH_MARGIN - LINE3_RIGHT_SHIFT - $(vlen "$sess_seg") - $(vlen "$week_seg") - 1))
   [ "$pad" -lt 1 ] && pad=1
   line3=$(printf '%s%*s%s' "$sess_seg" "$pad" "" "$week_seg")
 else

@@ -17,4 +17,4 @@ Goal: less complexity and coupling, not more classes or layers.
 
 Boundary questions: unique value? Knowledge enabling it? Minimum exposure?
 
-Sources: Ousterhout, *A Philosophy of Software Design*, ch. 4-8; [CS 190 notes](https://web.stanford.edu/~ouster/cgi-bin/cs190-winter18/lecture.php?topic=modularDesign). Operational paraphrases grounded in the author's notes.
+Sources: Ousterhout, _A Philosophy of Software Design_, ch. 4-8; [CS 190 notes](https://web.stanford.edu/~ouster/cgi-bin/cs190-winter18/lecture.php?topic=modularDesign). Operational paraphrases grounded in the author's notes.

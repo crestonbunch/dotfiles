@@ -19,7 +19,7 @@ shift 3
 fixups='description(glob:"Apply pre-commit fixes*")'
 title=$(jj log --no-graph --ignore-working-copy \
   -r "latest((${from}..${head}) & ~empty() & ~${fixups}, 1)" \
-  -T 'description.first_line()' 2>/dev/null) || title=""
+  -T 'description.first_line()' 2> /dev/null) || title=""
 if [[ -z $title ]]; then
   title=$(jj log --no-graph --ignore-working-copy -r "$head" -T 'description.first_line()')
 fi

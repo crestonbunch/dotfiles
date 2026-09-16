@@ -5,13 +5,25 @@ import { realpathSync } from "node:fs";
 import { test } from "node:test";
 import { createJiti } from "../npm/node_modules/jiti/lib/jiti.mjs";
 
-const piPackageRoot = join(dirname(realpathSync("/opt/homebrew/bin/pi")), "..", "libexec", "lib", "node_modules", "@earendil-works", "pi-coding-agent");
+const piPackageRoot = join(
+  dirname(realpathSync("/opt/homebrew/bin/pi")),
+  "..",
+  "libexec",
+  "lib",
+  "node_modules",
+  "@earendil-works",
+  "pi-coding-agent",
+);
 const bootstrapJiti = createJiti(import.meta.url);
-const { resolveHostPeerAliases } = await bootstrapJiti.import("../npm/node_modules/pi-subagents/src/runs/background/runner-aliases.ts");
+const { resolveHostPeerAliases } = await bootstrapJiti.import(
+  "../npm/node_modules/pi-subagents/src/runs/background/runner-aliases.ts",
+);
 const { aliases, missing } = resolveHostPeerAliases(piPackageRoot);
 assert.deepEqual(missing, []);
 const jiti = createJiti(import.meta.url, { alias: aliases });
-const claudeFooter = await jiti.import("../extensions/claude-footer.ts", { default: true });
+const claudeFooter = await jiti.import("../extensions/claude-footer.ts", {
+  default: true,
+});
 
 const makeEvents = () => {
   const emitter = new EventEmitter();
@@ -29,44 +41,51 @@ const setUp = (t, { respond } = {}) => {
   const events = makeEvents();
   let component;
   let renders = 0;
-  const theme = {
-    fg: (_color, text) => text,
-    bold: (text) => text,
+  const theme = { bold: text => text, fg: (_color, text) => text };
+  const tui = {
+    requestRender: () => {
+      renders += 1;
+    },
   };
-  const tui = { requestRender: () => { renders += 1; } };
   if (respond) {
-    events.on("subagents:cost:v1:request", (request) => {
+    events.on("subagents:cost:v1:request", request => {
       const response = respond(request);
-      if (response) events.emit(`subagents:cost:v1:reply:${request.requestId}`, response);
+      if (response) {
+        events.emit(`subagents:cost:v1:reply:${request.requestId}`, response);
+      }
     });
   }
   const pi = {
     events,
-    exec: async () => ({ code: 1, stdout: "", stderr: "" }),
+    exec: async () => ({ code: 1, stderr: "", stdout: "" }),
     on: (name, handler) => handlers.set(name, handler),
   };
   claudeFooter(pi);
 
-  const startSession = (sessionId) => {
+  const startSession = sessionId => {
     const ctx = {
-      mode: "tui",
       cwd: "/tmp/project",
-      model: { provider: "test", name: "Test Model", contextWindow: 200_000 },
-      thinkingLevel: "off",
-      getContextUsage: () => ({ percent: 10, contextWindow: 200_000 }),
+      getContextUsage: () => ({ contextWindow: 200_000, percent: 10 }),
+      mode: "tui",
+      model: { contextWindow: 200_000, name: "Test Model", provider: "test" },
       modelRegistry: {},
       sessionManager: {
-        getSessionId: () => sessionId,
-        getEntries: () => [{
-          type: "message",
-          message: {
-            role: "assistant",
-            usage: { input: 100, output: 25, cost: { total: 1.25 } },
+        getEntries: () => [
+          {
+            message: {
+              role: "assistant",
+              usage: { cost: { total: 1.25 }, input: 100, output: 25 },
+            },
+            type: "message",
           },
-        }],
+        ],
+        getSessionId: () => sessionId,
       },
+      thinkingLevel: "off",
       ui: {
-        setFooter: (factory) => { component = factory(tui, theme); },
+        setFooter: factory => {
+          component = factory(tui, theme);
+        },
       },
     };
     handlers.get("session_start")({}, ctx);
@@ -79,20 +98,22 @@ const setUp = (t, { respond } = {}) => {
 };
 
 const costReply = (request, cost, incomplete = false) => ({
-  version: 1,
-  requestId: request.requestId,
-  success: true,
   data: {
-    kind: "pi-subagents.cost-snapshot",
-    version: 1,
-    sessionId: request.sessionId,
     childUsage: { cost },
     incomplete,
+    kind: "pi-subagents.cost-snapshot",
+    sessionId: request.sessionId,
+    version: 1,
   },
+  requestId: request.requestId,
+  success: true,
+  version: 1,
 });
 
-test("renders the child subtotal separately without changing parent cost", (t) => {
-  const footer = setUp(t, { respond: (request) => costReply(request, 0.42, true) });
+test("renders the child subtotal separately without changing parent cost", t => {
+  const footer = setUp(t, {
+    respond: request => costReply(request, 0.42, true),
+  });
   footer.startSession("session-1");
 
   const output = footer.render();
@@ -100,9 +121,11 @@ test("renders the child subtotal separately without changing parent cost", (t) =
   assert.match(output, /sub \$0\.42\+/);
 });
 
-test("refreshes the cached subtotal when a subagent completes", (t) => {
+test("refreshes the cached subtotal when a subagent completes", t => {
   let childCost = 0.1;
-  const footer = setUp(t, { respond: (request) => costReply(request, childCost) });
+  const footer = setUp(t, {
+    respond: request => costReply(request, childCost),
+  });
   footer.startSession("session-1");
   assert.match(footer.render(), /sub \$0\.10/);
 
@@ -112,7 +135,7 @@ test("refreshes the cached subtotal when a subagent completes", (t) => {
   assert.match(footer.render(), /sub \$0\.42/);
 });
 
-test("shows unavailable instead of a false zero when the cost API is missing", (t) => {
+test("shows unavailable instead of a false zero when the cost API is missing", t => {
   t.mock.timers.enable({ apis: ["setTimeout"] });
   const footer = setUp(t);
   footer.startSession("session-1");
@@ -123,15 +146,25 @@ test("shows unavailable instead of a false zero when the cost API is missing", (
   assert.match(footer.render(), /sub n\/a/);
 });
 
-test("ignores a stale reply after switching sessions", (t) => {
+test("ignores a stale reply after switching sessions", t => {
   const requests = [];
-  const footer = setUp(t, { respond: (request) => { requests.push(request); } });
+  const footer = setUp(t, {
+    respond: request => {
+      requests.push(request);
+    },
+  });
   footer.startSession("session-1");
   footer.startSession("session-2");
 
-  footer.events.emit(`subagents:cost:v1:reply:${requests[0].requestId}`, costReply(requests[0], 9.99));
+  footer.events.emit(
+    `subagents:cost:v1:reply:${requests[0].requestId}`,
+    costReply(requests[0], 9.99),
+  );
   assert.doesNotMatch(footer.render(), /9\.99/);
 
-  footer.events.emit(`subagents:cost:v1:reply:${requests[1].requestId}`, costReply(requests[1], 0.42));
+  footer.events.emit(
+    `subagents:cost:v1:reply:${requests[1].requestId}`,
+    costReply(requests[1], 0.42),
+  );
   assert.match(footer.render(), /sub \$0\.42/);
 });

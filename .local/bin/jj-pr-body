@@ -10,7 +10,7 @@ set -euo pipefail
 out="${1:?usage: jj-pr-body <out-file> <revset> <diff-command> [args...]}"
 revset="${2?missing revset (pass '' to skip)}"
 shift 2
-if (( $# == 0 )); then
+if (($# == 0)); then
   echo "missing diff command" >&2
   exit 1
 fi
@@ -26,7 +26,7 @@ if [[ ! $cap_kb =~ ^[1-9][0-9]{0,6}$ ]]; then
   echo "JJ_PR_MAX_DIFF_KB must be a positive integer of at most 7 digits" >&2
   exit 1
 fi
-diff_cap=$(( cap_kb * 1024 ))
+diff_cap=$((cap_kb * 1024))
 
 context_dir=$(mktemp -d "${TMPDIR:-/tmp}/jj-pr-body.XXXXXX")
 trap 'rm -rf -- "$context_dir"' EXIT
@@ -39,11 +39,11 @@ if ! "$@" > "$full_diff"; then
   exit 1
 fi
 
-if repo_root=$(jj root --ignore-working-copy 2>/dev/null); then
+if repo_root=$(jj root --ignore-working-copy 2> /dev/null); then
   vcs=jj
 else
   vcs=git
-  repo_root=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
+  repo_root=$(git rev-parse --show-toplevel 2> /dev/null || pwd)
 fi
 
 template_path=""
@@ -64,14 +64,14 @@ if [[ -n $revset ]]; then
 fi
 
 history_file="$context_dir/history.txt"
-if [[ $vcs = jj ]]; then
+if [[ $vcs == jj ]]; then
   history_revset="ancestors(${revset:-@})"
   if ! jj log --no-graph --ignore-working-copy --color never \
     -r "$history_revset" --limit 20 \
     -T 'change_id.short() ++ " " ++ description.first_line() ++ "\n"' > "$history_file"; then
     echo "[Recent history unavailable.]" > "$history_file"
   fi
-elif ! git log -20 --format='%h %s' > "$history_file" 2>/dev/null; then
+elif ! git log -20 --format='%h %s' > "$history_file" 2> /dev/null; then
   echo "[Recent history unavailable.]" > "$history_file"
 fi
 
@@ -82,7 +82,7 @@ fi
   for rule_name in prose pull-requests; do
     rule_file="$HOME/.agents/rules/personal/$rule_name.md"
     if [[ -f $rule_file ]]; then
-      if [[ $rule_name = prose ]]; then
+      if [[ $rule_name == prose ]]; then
         printf '\n## Prose rules\n\n'
       else
         printf '\n## Pull request rules\n\n'
@@ -117,7 +117,7 @@ fi
   printf '\n## Diff\n\n'
   head -c "$diff_cap" "$full_diff"
   echo
-  if (( $(wc -c < "$full_diff") > diff_cap )); then
+  if (($(wc -c < "$full_diff") > diff_cap)); then
     printf '\n[Diff excerpt truncated at %sKB. Full diff: %s]\n' "$cap_kb" "$full_diff"
   fi
 } > "$prompt_input"

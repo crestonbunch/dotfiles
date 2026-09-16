@@ -6,7 +6,7 @@ prompt_file="${2:?missing prompt file}"
 out_file="${3:?missing output file}"
 shift 3
 
-backend="${JJ_AI_BACKEND:-$(jj config get ai.backend 2>/dev/null || true)}"
+backend="${JJ_AI_BACKEND:-$(jj config get ai.backend 2> /dev/null || true)}"
 backend="${backend:-pi}"
 case "$profile" in
   commit) model="${JJ_COMMIT_MODEL:-${JJ_AI_MODEL:-}}" ;;
@@ -19,7 +19,7 @@ esac
 
 case "$backend" in
   pi)
-    configured_model="$(jj config get ai.pi-model 2>/dev/null || true)"
+    configured_model="$(jj config get ai.pi-model 2> /dev/null || true)"
     model="${model:-${configured_model:-openai-codex/gpt-5.6-terra}}"
     printf '==> Drafting with Pi (%s)...\n' "$model" >&2
     args=(
@@ -31,15 +31,15 @@ case "$backend" in
       --no-prompt-templates
       --no-context-files
     )
-    if [[ "$profile" = pr ]]; then
+    if [[ $profile == pr ]]; then
       args+=(--tools read,grep,find,ls)
     else
       args+=(--no-tools)
     fi
     pi "${args[@]}" "@$prompt_file" > "$out_file"
     ;;
-  claude|claude-code)
-    configured_model="$(jj config get ai.claude-model 2>/dev/null || true)"
+  claude | claude-code)
+    configured_model="$(jj config get ai.claude-model 2> /dev/null || true)"
     model="${model:-${configured_model:-sonnet}}"
     printf '==> Drafting with Claude Code (%s)...\n' "$model" >&2
     args=(
@@ -47,7 +47,7 @@ case "$backend" in
       --print
       --settings '{"disableAllHooks":true}'
     )
-    if [[ "$profile" = pr ]]; then
+    if [[ $profile == pr ]]; then
       allowed_tools=(
         Read Grep Glob TodoWrite
         "Bash(jj log:*)" "Bash(jj diff:*)" "Bash(jj show:*)" "Bash(jj status:*)"
@@ -65,7 +65,7 @@ case "$backend" in
         --allowedTools "${allowed_tools[@]}"
       )
       for dir in "$@"; do
-        [[ -n "$dir" && -d "$dir" ]] && args+=(--add-dir "$dir")
+        [[ -n $dir && -d $dir ]] && args+=(--add-dir "$dir")
       done
     fi
     claude "${args[@]}" < "$prompt_file" > "$out_file"

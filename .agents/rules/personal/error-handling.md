@@ -14,4 +14,4 @@ Goal: fewer exceptional cases for callers to handle.
 - **Stop when recovery is unviable.** Report to an appropriate top-level handler or terminate when continued execution is unsafe. No invented recovery.
 - **Keep diagnostics.** Useful failure context in the error or system log.
 
-Sources: Ousterhout, *A Philosophy of Software Design*, ch. 10; [CS 190 notes](https://web.stanford.edu/~ouster/cgi-bin/cs190-spring15/lecture.php?topic=errorHandling). Operational paraphrases; recovery and termination qualifications verified against the author's notes.
+Sources: Ousterhout, _A Philosophy of Software Design_, ch. 10; [CS 190 notes](https://web.stanford.edu/~ouster/cgi-bin/cs190-spring15/lecture.php?topic=errorHandling). Operational paraphrases; recovery and termination qualifications verified against the author's notes.

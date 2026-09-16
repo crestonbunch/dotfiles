@@ -1,32 +1,43 @@
 #:schema https://docs.jj-vcs.dev/latest/config-schema.json
 
 [user]
-name = "Creston Bunch"
 email = "git@bunch.im"
+name = "Creston Bunch"
 
 [ui]
 diff-editor = "diffview"
 diff-formatter = ["difft", "--color=always", "$left", "$right"]
 merge-editor = "nvimdiff"
 [merge-tools.nvimdiff]
-program = "nvim"
 merge-args = [
-  "-d", "$output",
-  "-c", "rightbelow vert diffsplit $base",
-  "-c", "wincmd h",
-  "-c", "rightbelow diffsplit $left",
-  "-c", "wincmd l",
-  "-c", "rightbelow diffsplit $right",
-  "-c", "wincmd t",
-  "-c", "nnoremap <buffer> <leader>l :diffget 3<CR>",
-  "-c", "nnoremap <buffer> <leader>b :diffget 2<CR>",
-  "-c", "nnoremap <buffer> <leader>r :diffget 4<CR>",
+  "-d",
+  "$output",
+  "-c",
+  "rightbelow vert diffsplit $base",
+  "-c",
+  "wincmd h",
+  "-c",
+  "rightbelow diffsplit $left",
+  "-c",
+  "wincmd l",
+  "-c",
+  "rightbelow diffsplit $right",
+  "-c",
+  "wincmd t",
+  "-c",
+  "nnoremap <buffer> <leader>l :diffget 3<CR>",
+  "-c",
+  "nnoremap <buffer> <leader>b :diffget 2<CR>",
+  "-c",
+  "nnoremap <buffer> <leader>r :diffget 4<CR>",
 ]
+program = "nvim"
 
 [merge-tools.diffview]
 # https://github.com/jj-vcs/jj/wiki/Vim,-Neovim
-program = "sh"
-edit-args = ["-c", '''
+edit-args = [
+  "-c",
+  '''
   set -eu
   rm -f "$right/JJ-INSTRUCTIONS"
   git -C "$left" init -q
@@ -42,6 +53,7 @@ edit-args = ["-c", '''
   git -C "$right" clean -q -df # remove untracked files
 ''',
 ]
+program = "sh"
 
 [remotes.origin]
 auto-track-bookmarks = "glob:creston/*"
@@ -55,8 +67,8 @@ log = "present(@) | ancestors((mine() ~ ::trunk()) | @, 2) | present(trunk())"
 
 [ai]
 backend = "pi"
-pi-model = "openai-codex/gpt-5.6-terra"
 claude-model = "sonnet"
+pi-model = "openai-codex/gpt-5.6-terra"
 
 [aliases]
 # lob: like `jj log` but restricted to bookmarked revisions. Non-bookmarked
@@ -69,7 +81,13 @@ lob = ["log", "-r", "bookmarks()"]
 # pre-commit changed nothing.
 #   jj precommit                       # check current change
 #   jj precommit 'trunk()..@'          # check whole stack
-precommit = ["util", "exec", "--", "sh", "-c", '''
+precommit = [
+  "util",
+  "exec",
+  "--",
+  "sh",
+  "-c",
+  '''
 set -eu
 revset="${1:-@}"
 files=$(jj diff --name-only -r "$revset")
@@ -100,11 +118,19 @@ fi
 if [ "$status" -ne 0 ]; then
   pre-commit run --files $files
 fi
-''', "jj-precommit"]
+''',
+  "jj-precommit",
+]
 
 # `jj b`         — bookmark the most recent non-empty change in trunk()..@,
 #                  slugged from its description.
-b = ["util", "exec", "--", "bash", "-c", '''
+b = [
+  "util",
+  "exec",
+  "--",
+  "bash",
+  "-c",
+  '''
 set -euo pipefail
 rev="latest(trunk()..@ & ~empty())"
 subject=$(jj log --no-graph -r "$rev" -T 'description.first_line()' 2>/dev/null)
@@ -128,7 +154,9 @@ if ! jj bookmark create "$branch" -r "$rev" 2>/dev/null; then
   jj bookmark create "$branch" -r "$rev"
 fi
 printf 'bookmark: %s @ %s\n' "$branch" "$(jj log --no-graph -r "$rev" -T 'commit_id.short()')"
-''', "jj-b"]
+''',
+  "jj-b",
+]
 
 # bb: list local bookmarks in trunk()..@ (mine), nearest to @ first.
 bb = ["util", "exec", "--", "bash", "-c", '''
@@ -176,7 +204,13 @@ fi
 # aliases need: a PR created on a middle bookmark must still see the PRs
 # stacked above it. If @ has more than one descendant head, the stack above @
 # is ambiguous, so `bs` falls back to the `bb` scope and warns.
-bs = ["util", "exec", "--", "bash", "-c", '''
+bs = [
+  "util",
+  "exec",
+  "--",
+  "bash",
+  "-c",
+  '''
 set -euo pipefail
 heads=$(jj log --ignore-working-copy --no-graph -r 'heads(@::)' \
   -T 'change_id ++ "\n"' 2>/dev/null | awk 'NF')
@@ -196,13 +230,21 @@ if [[ -z ${out:-} ]]; then
   exit 1
 fi
 printf '%s\n' "$out"
-''', "jj-bs"]
+''',
+  "jj-bs",
+]
 
 # bm: bookmark move. Find the closest bookmark in trunk()..@, target @ (or @-
 # if @ is empty), rebase descendants of the bookmark's old position that
 # aren't on the line through the target onto the target, and move the
 # bookmark.
-bm = ["util", "exec", "--", "bash", "-c", '''
+bm = [
+  "util",
+  "exec",
+  "--",
+  "bash",
+  "-c",
+  '''
 set -euo pipefail
 name=$(jj bb | head -n1)
 if [[ -n $(jj log --no-graph -r "@ & empty()" -T 'change_id' 2>/dev/null) ]]; then
@@ -226,11 +268,19 @@ if [[ "$old_rev" != "$new_rev" ]]; then
   fi
   jj bookmark move "$name" --to "$new_rev" --allow-backwards
 fi
-''', "jj-bm"]
+''',
+  "jj-bm",
+]
 
 # bmt: like `bm`, but includes the trunk bookmark as a fallback when there
 # are no stack bookmarks between trunk and @.
-bmt = ["util", "exec", "--", "bash", "-c", '''
+bmt = [
+  "util",
+  "exec",
+  "--",
+  "bash",
+  "-c",
+  '''
 set -euo pipefail
 name=$(jj bbt | head -n1)
 if [[ -z "$name" ]]; then
@@ -258,10 +308,18 @@ if [[ "$old_rev" != "$new_rev" ]]; then
   fi
   jj bookmark move "$name" --to "$new_rev" --allow-backwards
 fi
-''', "jj-bmt"]
+''',
+  "jj-bmt",
+]
 
 # pr: dispatch to a pr-* subcommand (e.g. `jj pr merge` -> `jj pr-merge`).
-pr = ["util", "exec", "--", "bash", "-c", '''
+pr = [
+  "util",
+  "exec",
+  "--",
+  "bash",
+  "-c",
+  '''
 set -euo pipefail
 sub="${1:-help}"
 shift || true
@@ -295,7 +353,9 @@ EOF
     exit 1
     ;;
 esac
-''', "jj-pr"]
+''',
+  "jj-pr",
+]
 
 # pr-open: open the GitHub PR for the bookmark closest to @ (in trunk()..@, mine).
 pr-open = ["util", "exec", "--", "bash", "-c", '''
@@ -308,7 +368,13 @@ exec gh pr view --web "$name"
 # local vs remote head SHA, change stats, and CI checks (skipped ones omitted).
 # Status indicators match `work`: top-level PR emoji (📝/🔴/📤/🟢/❎/🔁), reviewer
 # state emoji (✅/❌/❓/⊘/⏳), check bucket emoji (✅/🔴/⊘/⏳), and 💬 for threads.
-pr-status = ["util", "exec", "--", "bash", "-c", '''
+pr-status = [
+  "util",
+  "exec",
+  "--",
+  "bash",
+  "-c",
+  '''
 set -euo pipefail
 name=$(jj bb | head -n1)
 local_sha=$(jj log --no-graph -r "$name" -T 'commit_id')
@@ -454,7 +520,9 @@ if [[ "$all_json" != "[]" ]]; then
     done <<<"$optional_lines"
   fi
 fi
-''', "jj-pr-status"]
+''',
+  "jj-pr-status",
+]
 
 # pr-create: open a GitHub PR for the nearest bookmark, basing it on the
 # next-nearest bookmark (or repo default if there isn't one). Title comes from
@@ -467,7 +535,13 @@ fi
 # the PR joins a GitHub stack: `pr-rebase` chains the bases and `stack-link`
 # links the PRs. That covers a PR created in the middle or at the bottom of an
 # existing stack, where the PRs above it have to be retargeted onto the new one.
-pr-create = ["util", "exec", "--", "bash", "-c", '''
+pr-create = [
+  "util",
+  "exec",
+  "--",
+  "bash",
+  "-c",
+  '''
 set -euo pipefail
 bookmarks=()
 while IFS= read -r line; do
@@ -506,11 +580,19 @@ if (( $(jj bs | wc -l | tr -d ' ') > 1 )); then
   printf '\n==> Syncing GitHub stack\n' >&2
   jj stack-link
 fi
-''', "jj-pr-create"]
+''',
+  "jj-pr-create",
+]
 
 # pr-describe: draft a PR description with the configured AI, open it in
 # $EDITOR, then push the result to the PR via `gh pr edit`.
-pr-describe = ["util", "exec", "--", "bash", "-c", '''
+pr-describe = [
+  "util",
+  "exec",
+  "--",
+  "bash",
+  "-c",
+  '''
 set -euo pipefail
 head=$(jj bb | head -n1)
 if ! gh pr view "$head" --json number >/dev/null 2>&1; then
@@ -530,13 +612,21 @@ trap 'rm -rf "$tmpdir"' EXIT
 body_file="$tmpdir/body.md"
 jj-pr-body "$body_file" "$revset" gh pr diff "$head"
 gh pr edit "$head" --body-file "$body_file"
-''', "jj-pr-describe"]
+''',
+  "jj-pr-describe",
+]
 
 # pr-edit: open the PR title and description in $EDITOR, separated by a marker
 # line. On save, the first line becomes the new title and everything below the
 # marker becomes the new body. Aborts if the marker is missing or the title is
 # empty.
-pr-edit = ["util", "exec", "--", "bash", "-c", '''
+pr-edit = [
+  "util",
+  "exec",
+  "--",
+  "bash",
+  "-c",
+  '''
 set -euo pipefail
 head=$(jj bb | head -n1)
 if ! gh pr view "$head" --json number >/dev/null 2>&1; then
@@ -586,13 +676,21 @@ new_body=$(printf '%s' "$post" | awk '
 ')
 printf '%s' "$new_body" > "$body_file"
 gh pr edit "$head" --title "$new_title" --body-file "$body_file"
-''', "jj-pr-edit"]
+''',
+  "jj-pr-edit",
+]
 
 # pr-assign: fzf-pick one or more reviewers and request review on the nearest PR.
 # Candidate list is GitHub's suggested reviewers followed by recent commit authors
 # on the default branch (deduped, in order). Excludes self, PR author, and anyone
 # already requested. TAB to multi-select.
-pr-assign = ["util", "exec", "--", "bash", "-c", '''
+pr-assign = [
+  "util",
+  "exec",
+  "--",
+  "bash",
+  "-c",
+  '''
 set -euo pipefail
 head=$(jj bb | head -n1)
 if ! gh pr view "$head" --json number >/dev/null 2>&1; then
@@ -638,14 +736,22 @@ while IFS= read -r reviewer; do
   args+=(--add-reviewer "$reviewer")
 done <<<"$sel"
 gh pr edit "$head" "${args[@]}"
-''', "jj-pr-assign"]
+''',
+  "jj-pr-assign",
+]
 
 # pr-comments: browse inline review comments + top-level PR comments, plus a
 # "<new comment>" entry for posting a fresh top-level comment. fzf-pick one,
 # write the body in $EDITOR (any context is prefilled as `#`-prefixed lines and
 # stripped on save). Inline replies thread via /pulls/N/comments/{id}/replies;
 # top-level posts go to /issues/N/comments.
-pr-comments = ["util", "exec", "--", "bash", "-c", '''
+pr-comments = [
+  "util",
+  "exec",
+  "--",
+  "bash",
+  "-c",
+  '''
 set -euo pipefail
 head=$(jj bb | head -n1)
 if ! gh pr view "$head" --json number >/dev/null 2>&1; then
@@ -761,7 +867,9 @@ case "$sel_id" in
     echo "top-level comment posted on PR #$number"
     ;;
 esac
-''', "jj-pr-comments"]
+''',
+  "jj-pr-comments",
+]
 
 # pr-update: fetch trunk, rebase the stack onto it, push, reconcile PR bases,
 # and sync the GitHub stack. It never opens a PR. Use `jj stack update` for
@@ -786,7 +894,13 @@ jj stack-link
 # The push covers `jj bs`, not `jj bb`: `jj rebase -d trunk()` moves the
 # revisions above @ as well, and their bookmarks must reach the remote too or
 # the stacked PRs above @ keep pointing at stale commits.
-pr-push = ["util", "exec", "--", "bash", "-c", '''
+pr-push = [
+  "util",
+  "exec",
+  "--",
+  "bash",
+  "-c",
+  '''
 set -euo pipefail
 nearest_name=$(jj bb | head -n1)
 tip() {
@@ -812,7 +926,9 @@ if [[ ${#push_args[@]} -eq 0 ]]; then
   exit 1
 fi
 jj git push "${push_args[@]}"
-''', "jj-pr-push"]
+''',
+  "jj-pr-push",
+]
 
 # stack-push: run pre-commit once per bookmark that differs from its open PR,
 # bottom first, then push every bookmark in the stack. New PRs are always
@@ -830,7 +946,13 @@ jj git push "${push_args[@]}"
 #
 # @ returns to where it started. An empty @ on top of the stack is abandoned by
 # the first `jj edit`, so it is recreated on top instead.
-stack-push = ["util", "exec", "--", "bash", "-c", '''
+stack-push = [
+  "util",
+  "exec",
+  "--",
+  "bash",
+  "-c",
+  '''
 set -euo pipefail
 bookmarks=()
 while IFS= read -r line; do
@@ -881,7 +1003,9 @@ for b in "${bookmarks[@]}"; do
 done
 printf '\n==> Pushing %s bookmark(s)\n' "${#bookmarks[@]}"
 jj git push "${push_args[@]}"
-''', "jj-stack-push"]
+''',
+  "jj-stack-push",
+]
 
 # pr-rebase: reconcile each open PR's base to match the current stack ordering
 # (the bookmark below it, or the repo default for the bottom of the stack).
@@ -891,7 +1015,13 @@ jj git push "${push_args[@]}"
 # base must move, the GitHub stack that holds it is unstacked first, and the
 # caller relinks it with `stack-link`. GitHub also refuses to unstack a PR that
 # is queued for merge or has auto-merge enabled. Unstack that PR by hand first.
-pr-rebase = ["util", "exec", "--", "bash", "-c", '''
+pr-rebase = [
+  "util",
+  "exec",
+  "--",
+  "bash",
+  "-c",
+  '''
 set -euo pipefail
 bookmarks=()
 while IFS= read -r line; do
@@ -952,7 +1082,9 @@ for i in "${!heads[@]}"; do
   printf 'rebasing PR for %s: %s -> %s\n' "${heads[i]}" "${olds[i]}" "${news[i]}"
   gh pr edit "${heads[i]}" --base "${news[i]}"
 done
-''', "jj-pr-rebase"]
+''',
+  "jj-pr-rebase",
+]
 
 # stack: dispatch to a stack-* subcommand (e.g. `jj stack create` ->
 # `jj stack-create`). The `pr-*` aliases act on the nearest bookmark; the
@@ -996,7 +1128,13 @@ esac
 # created after every fix is in place, and each PR carries its own fixes.
 #
 # Each new PR costs one AI draft and one $EDITOR pass, in stack order.
-stack-create = ["util", "exec", "--", "bash", "-c", '''
+stack-create = [
+  "util",
+  "exec",
+  "--",
+  "bash",
+  "-c",
+  '''
 set -euo pipefail
 bookmarks=()
 while IFS= read -r line; do
@@ -1052,7 +1190,9 @@ printf '\n==> Reconciling PR bases\n'
 jj pr-rebase
 printf '\n==> Syncing GitHub stack\n'
 jj stack-link
-''', "jj-stack-create"]
+''',
+  "jj-stack-create",
+]
 
 # stack-update: fetch trunk and rebase the stack onto it, then run
 # `stack-create`. This is `pr-update` plus a PR for every bookmark that lacks
@@ -1077,7 +1217,13 @@ jj stack-create "$@"
 # applied by unstacking and recreating the stack with the full list. GitHub
 # refuses to unstack a PR that is queued for merge or has auto-merge enabled,
 # which makes the recreate fail. Unstack that PR by hand first.
-stack-link = ["util", "exec", "--", "bash", "-c", '''
+stack-link = [
+  "util",
+  "exec",
+  "--",
+  "bash",
+  "-c",
+  '''
 set -euo pipefail
 repo=$(gh repo view --json nameWithOwner -q .nameWithOwner)
 if ! gh api "repos/$repo/stacks" >/dev/null 2>&1; then
@@ -1149,7 +1295,9 @@ if ! create_stack; then
   printf 'failed to rebuild stack #%s; some of its PRs may still be stacked\n' "$stack" >&2
   exit 1
 fi
-''', "jj-stack-link"]
+''',
+  "jj-stack-link",
+]
 
 # stack-merge: merge the whole stack. Every bookmark is checked before anything
 # merges, and every blocker is reported at once. A PR must be open, non-draft,
@@ -1180,7 +1328,13 @@ fi
 # Extra args go to `gh stack merge`, or to every `gh pr merge` on the fallback
 # path. `--squash` is added unless the args name a merge method. `gh stack
 # merge` refuses `--admin`; only the fallback path takes it.
-stack-merge = ["util", "exec", "--", "bash", "-c", '''
+stack-merge = [
+  "util",
+  "exec",
+  "--",
+  "bash",
+  "-c",
+  '''
 set -euo pipefail
 bookmarks=()
 while IFS= read -r line; do
@@ -1356,13 +1510,21 @@ for i in "${!bookmarks[@]}"; do
   # state. The remote branch goes away in cleanup.
   gh pr merge "${numbers[i]}" --match-head-commit "${shas[i]}" "$@"
 done
-''', "jj-stack-merge"]
+''',
+  "jj-stack-merge",
+]
 
 # pr-merge: merge the GitHub PR for the bookmark closest to @, but only if
 # it targets the repo default branch and has no failing required status checks.
 # After a successful merge, runs `jj pr-cleanup`. Extra args are forwarded to
 # `gh pr merge`.
-pr-merge = ["util", "exec", "--", "bash", "-c", '''
+pr-merge = [
+  "util",
+  "exec",
+  "--",
+  "bash",
+  "-c",
+  '''
 set -euo pipefail
 head=$(jj bb | head -n1)
 default_branch=$(gh repo view --json defaultBranchRef -q .defaultBranchRef.name)
@@ -1384,7 +1546,9 @@ head_sha=$(jj log --no-graph -r "$head" -T 'commit_id')
 # the local bookmark.
 gh pr merge "$head" --match-head-commit "$head_sha" --squash "$@"
 jj pr-cleanup
-''', "jj-pr-merge"]
+''',
+  "jj-pr-merge",
+]
 
 # pr-cleanup: delete the remote branch, fetch the latest trunk, forget the
 # merged PR's local bookmark, rebase the stack, and abandon any commits
@@ -1394,7 +1558,13 @@ jj pr-cleanup
 # lingers, and untracked remotes are in immutable_heads() — which blocks
 # the rebase below. `bookmark forget --include-remotes` is a belt-and-
 # suspenders fallback if the API delete failed (e.g. no permission).
-pr-cleanup = ["util", "exec", "--", "bash", "-c", '''
+pr-cleanup = [
+  "util",
+  "exec",
+  "--",
+  "bash",
+  "-c",
+  '''
 set -euo pipefail
 head=$(jj bb | head -n1)
 state=$(gh pr view "$head" --json state -q .state)
@@ -1408,7 +1578,9 @@ jj git fetch
 jj bookmark forget --include-remotes "$head" 2>/dev/null || true
 jj rebase -d 'trunk()'
 jj abandon 'trunk()..@ & empty()' 2>/dev/null || true
-''', "jj-pr-cleanup"]
+''',
+  "jj-pr-cleanup",
+]
 
 # pr-close: close the GitHub PR for the bookmark closest to @ and forget the
 # local bookmark. Refuses if the PR isn't OPEN. Revisions are left intact.
@@ -1473,7 +1645,25 @@ jj new 'trunk()'
 
 # cc: draft a commit message with the configured AI, open it in $EDITOR,
 # then finalize with `jj commit`.
-cc = ["util", "exec", "--", "bash", "-c", "exec jj-ai-describe \"$1\"", "jj-cc", "commit"]
+cc = [
+  "util",
+  "exec",
+  "--",
+  "bash",
+  "-c",
+  "exec jj-ai-describe \"$1\"",
+  "jj-cc",
+  "commit",
+]
 
 # cd: use the same draft flow with `jj describe` and stay on @.
-cd = ["util", "exec", "--", "bash", "-c", "exec jj-ai-describe \"$1\"", "jj-cd", "describe"]
+cd = [
+  "util",
+  "exec",
+  "--",
+  "bash",
+  "-c",
+  "exec jj-ai-describe \"$1\"",
+  "jj-cd",
+  "describe",
+]
