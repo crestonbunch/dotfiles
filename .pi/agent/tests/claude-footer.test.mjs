@@ -141,15 +141,17 @@ test("hides a zero subtotal when async child usage is unresolved", t => {
   assert.doesNotMatch(footer.render(), /0\.00/);
 });
 
-test("refreshes the cached subtotal when a subagent completes", t => {
-  let childCost = 0.1;
+test("refreshes pending child cost when a subagent completes", t => {
+  let childCost = 0;
+  let incomplete = true;
   const footer = setUp(t, {
-    respond: request => costReply(request, childCost),
+    respond: request => costReply(request, childCost, incomplete),
   });
   footer.startSession("session-1");
-  assert.match(footer.render(), /1\.250\.10/);
+  assert.doesNotMatch(footer.render(), /0\.00/);
 
   childCost = 0.42;
+  incomplete = false;
   footer.events.emit("subagent:async-complete", { runId: "child-1" });
 
   assert.match(footer.render(), /1\.250\.42/);

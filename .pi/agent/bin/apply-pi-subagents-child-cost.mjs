@@ -37,6 +37,10 @@ const gitApply = (input, ...args) =>
   spawnSync("git", ["apply", ...args], {
     cwd: packageDir,
     encoding: "utf8",
+    env: {
+      ...process.env,
+      GIT_CEILING_DIRECTORIES: dirname(packageDir),
+    },
     input,
   });
 

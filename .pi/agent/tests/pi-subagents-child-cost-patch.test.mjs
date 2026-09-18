@@ -194,6 +194,31 @@ const setUpStandaloneAsyncCostApi = (
   return fixture;
 };
 
+const setUpWorkflowCostApi = (t, { malformedReceipt = false } = {}) => {
+  const runId = randomUUID();
+  const asyncDir = join(DIRS.async, runId);
+  const branch = [
+    {
+      message: {
+        details: { mode: "workflow", results: [], runId },
+        role: "toolResult",
+        toolName: "subagent",
+      },
+      type: "message",
+    },
+  ];
+  if (malformedReceipt) {
+    mkdirSync(asyncDir, { recursive: true });
+    writeFileSync(join(asyncDir, "workflow-receipt.json"), "{}");
+  }
+  const fixture = setUpCostApi({ branch });
+  t.after(() => {
+    fixture.registration.dispose();
+    rmSync(asyncDir, { force: true, recursive: true });
+  });
+  return fixture;
+};
+
 const requestCost = fixture => {
   let reply;
   fixture.events.on("subagents:cost:v1:reply:request-1", value => {
@@ -288,6 +313,29 @@ test("cost API deduplicates standalone metadata already present in direct result
   assert.deepEqual(reply.data.childUsage, childUsage);
   assert.equal(reply.data.incomplete, false);
   assert.equal(reply.data.unresolvedAsyncChildren, 0);
+});
+
+test("cost API quietly marks a pending workflow receipt as incomplete", t => {
+  const fixture = setUpWorkflowCostApi(t);
+  const consoleError = t.mock.method(console, "error");
+
+  const reply = requestCost(fixture);
+
+  assert.deepEqual(reply.data.childUsage, emptyUsage);
+  assert.equal(reply.data.incomplete, true);
+  assert.equal(reply.data.unresolvedAsyncChildren, 1);
+  assert.equal(consoleError.mock.callCount(), 0);
+});
+
+test("cost API logs malformed workflow receipts", t => {
+  const fixture = setUpWorkflowCostApi(t, { malformedReceipt: true });
+  const consoleError = t.mock.method(console, "error", () => {});
+
+  const reply = requestCost(fixture);
+
+  assert.equal(reply.data.incomplete, true);
+  assert.equal(reply.data.unresolvedAsyncChildren, 1);
+  assert.equal(consoleError.mock.callCount(), 1);
 });
 
 test("slash output remains unchanged after sharing its calculation", async () => {
