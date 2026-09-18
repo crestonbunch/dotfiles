@@ -9,6 +9,12 @@ alwaysApply: true
 - Work directly by default. Delegate for useful independent research, review, or isolated implementation.
 - Available agents only. Specific assignments; review results before use.
 
+## Lean delegation
+
+- Keep subagent assignments lean and proportional to the task. Delegate bounded implementation, async decisions, focused research, or plan review with only the necessary context and clear deliverables. Don't inflate small fixes into broad audits or multi-stage workflows.
+- Proactively fan out when multiple independent tasks can proceed concurrently. Give concurrent writers separate workspaces and arrange follow-up integration; keep dependencies sequenced. Use the fewest agents needed for the independent lanes, without redundant assignments.
+- Assign shared validation to one owner and reuse the results. Don't have multiple agents run the same tests unless a specific independent verification need justifies it.
+
 ## Codex model selection
 
 - **Fast scout/search tier, `openai-codex/gpt-5.6-luna`:** Search and summarize text. Do not use for analysis.
