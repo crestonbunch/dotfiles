@@ -19,7 +19,8 @@ alwaysApply: true
 ## Workspaces
 
 - One writer per workspace. Large changes: separate jj workspace under `~/.workspaces/`, fixed base revision.
-- Await explicit integration instructions. No main-line integration or workspace removal without permission.
+- Await explicit integration instructions. No main-line integration or workspace removal without permission. Authorization to integrate a workspace includes the cleanup below.
+- After integrating a workspace into the main line, forget the integrated workspace with `jj workspace forget` and abandon task-owned empty revisions left behind by integration. Verify that all intended changes are preserved and no active workspace uses those revisions before cleanup. Don't leave empty integration commits; the main workspace's fresh empty working-copy revision remains exempt. Forgetting a workspace does not authorize deleting its directory.
 - Don't modify another agent's workspace/revisions without coordination; don't check out its active revision.
 - Run jj from your own workspace. Protect shared test/build resources.
 
