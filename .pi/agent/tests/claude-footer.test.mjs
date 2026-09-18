@@ -110,14 +110,15 @@ const costReply = (request, cost, incomplete = false) => ({
   version: 1,
 });
 
-test("renders parent and child costs together with an incomplete marker", t => {
+test("renders incomplete child costs without a trailing plus", t => {
   const footer = setUp(t, {
     respond: request => costReply(request, 0.42, true),
   });
   footer.startSession("session-1");
 
   const output = footer.render();
-  assert.match(output, /1\.250\.42/);
+  assert.match(output, /1\.250\.42/);
+  assert.doesNotMatch(output, /0\.42/);
   assert.doesNotMatch(output, /sub /);
 });
 

@@ -599,7 +599,7 @@ export default (pi: ExtensionAPI) => {
               : undefined;
           const childCostSegment =
             childCost.status === "available"
-              ? `${theme.fg("dim", ICON.plus)}${childCost.cost.toFixed(2)}${childCost.incomplete ? theme.fg("dim", ICON.plus) : ""}`
+              ? `${theme.fg("dim", ICON.plus)}${childCost.cost.toFixed(2)}`
               : "";
           const costSegment = `${theme.fg("dim", ICON.cost)} ${cost.toFixed(2)}${childCostSegment}`;
           const line2Left = join(theme, [
