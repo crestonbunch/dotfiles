@@ -1,0 +1,9 @@
+{
+  "defaultSubagentContext": "fresh",
+  "asyncByDefault": true,
+  "globalConcurrencyLimit": 4,
+  "maxSubagentDepth": 1,
+  "intercomBridge": {
+    "mode": "always"
+  }
+}
