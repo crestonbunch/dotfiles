@@ -131,6 +131,16 @@ test("renders a zero child cost without a separate sub label", t => {
   assert.doesNotMatch(footer.render(), /sub /);
 });
 
+test("hides a zero subtotal when async child usage is unresolved", t => {
+  const footer = setUp(t, {
+    respond: request => costReply(request, 0, true),
+  });
+  footer.startSession("session-1");
+
+  assert.match(footer.render(), /1\.25/);
+  assert.doesNotMatch(footer.render(), /0\.00/);
+});
+
 test("refreshes the cached subtotal when a subagent completes", t => {
   let childCost = 0.1;
   const footer = setUp(t, {

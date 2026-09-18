@@ -13,10 +13,15 @@ const patchPath = join(
   "patches",
   "pi-subagents-0.66.0-child-cost-api.patch.b64",
 );
-const patch = Buffer.from(
-  readFileSync(patchPath, "utf8").replaceAll(/\s/g, ""),
-  "base64",
+const upgradePatchPath = join(
+  agentDir,
+  "patches",
+  "pi-subagents-0.66.0-child-cost-api-v1-to-v2.patch.b64",
 );
+const readPatch = path =>
+  Buffer.from(readFileSync(path, "utf8").replaceAll(/\s/g, ""), "base64");
+const patch = readPatch(patchPath);
+const upgradePatch = readPatch(upgradePatchPath);
 
 const packageJson = JSON.parse(
   readFileSync(join(packageDir, "package.json"), "utf8"),
@@ -28,15 +33,15 @@ if (packageJson.version !== EXPECTED_VERSION) {
   process.exit(1);
 }
 
-const gitApply = (...args) =>
+const gitApply = (input, ...args) =>
   spawnSync("git", ["apply", ...args], {
     cwd: packageDir,
     encoding: "utf8",
-    input: patch,
+    input,
   });
 
-if (gitApply("--check").status === 0) {
-  const applied = gitApply();
+if (gitApply(patch, "--check").status === 0) {
+  const applied = gitApply(patch);
   if (applied.status !== 0) {
     console.error(applied.stderr.trim() || "git apply failed");
     process.exit(applied.status ?? 1);
@@ -47,9 +52,21 @@ if (gitApply("--check").status === 0) {
   process.exit(0);
 }
 
-if (gitApply("--reverse", "--check").status === 0) {
+if (gitApply(patch, "--reverse", "--check").status === 0) {
   console.log(
     `Child-cost API patch is already applied to pi-subagents ${EXPECTED_VERSION}.`,
+  );
+  process.exit(0);
+}
+
+if (gitApply(upgradePatch, "--check").status === 0) {
+  const applied = gitApply(upgradePatch);
+  if (applied.status !== 0) {
+    console.error(applied.stderr.trim() || "git apply failed");
+    process.exit(applied.status ?? 1);
+  }
+  console.log(
+    `Upgraded child-cost API patch in pi-subagents ${EXPECTED_VERSION}.`,
   );
   process.exit(0);
 }

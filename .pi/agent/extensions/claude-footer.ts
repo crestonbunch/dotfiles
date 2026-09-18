@@ -340,7 +340,8 @@ export default (pi: ExtensionAPI) => {
           typeof reportedCost === "number" &&
           Number.isFinite(reportedCost) &&
           reportedCost >= 0 &&
-          typeof reply.data.incomplete === "boolean"
+          typeof reply.data.incomplete === "boolean" &&
+          (reportedCost > 0 || reply.data.incomplete === false)
         ) {
           childCost = {
             cost: reportedCost,
