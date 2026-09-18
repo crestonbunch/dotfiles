@@ -595,21 +595,17 @@ export default (pi: ExtensionAPI) => {
             input > 0 || output > 0
               ? `${theme.fg("dim", ICON.input)} ${formatTokens(input)} ${theme.fg("dim", ICON.output)} ${formatTokens(output)}`
               : undefined;
-          const costSegment =
-            cost > 0
-              ? `${theme.fg("dim", ICON.cost)} ${cost.toFixed(2)}`
-              : undefined;
           const childCostSegment =
             childCost.status === "available"
-              ? `sub $${childCost.cost.toFixed(2)}${childCost.incomplete ? "+" : ""}`
+              ? `${childCost.cost.toFixed(2)}${childCost.incomplete ? "+" : ""}`
               : childCost.status === "loading"
-                ? "sub …"
-                : "sub n/a";
+                ? "…"
+                : "n/a";
+          const costSegment = `${theme.fg("dim", ICON.cost)} ${cost.toFixed(2)}+${childCostSegment}`;
           const line2Left = join(theme, [
             contextSegment,
             tokenSegment,
             costSegment,
-            childCostSegment,
           ]);
           const line2Right = join(theme, [
             location.bookmark
