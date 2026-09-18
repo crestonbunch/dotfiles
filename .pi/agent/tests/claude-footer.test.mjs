@@ -117,7 +117,7 @@ test("renders parent and child costs together with an incomplete marker", t => {
   footer.startSession("session-1");
 
   const output = footer.render();
-  assert.match(output, /1\.25\+0\.42\+/);
+  assert.match(output, /1\.250\.42/);
   assert.doesNotMatch(output, /sub /);
 });
 
@@ -127,7 +127,7 @@ test("renders a zero child cost without a separate sub label", t => {
   });
   footer.startSession("session-1");
 
-  assert.match(footer.render(), /1\.25\+0\.00/);
+  assert.match(footer.render(), /1\.250\.00/);
   assert.doesNotMatch(footer.render(), /sub /);
 });
 
@@ -137,23 +137,25 @@ test("refreshes the cached subtotal when a subagent completes", t => {
     respond: request => costReply(request, childCost),
   });
   footer.startSession("session-1");
-  assert.match(footer.render(), /1\.25\+0\.10/);
+  assert.match(footer.render(), /1\.250\.10/);
 
   childCost = 0.42;
   footer.events.emit("subagent:async-complete", { runId: "child-1" });
 
-  assert.match(footer.render(), /1\.25\+0\.42/);
+  assert.match(footer.render(), /1\.250\.42/);
 });
 
-test("shows unavailable instead of a false zero when the cost API is missing", t => {
+test("hides the child cost while loading or unavailable", t => {
   t.mock.timers.enable({ apis: ["setTimeout"] });
   const footer = setUp(t);
   footer.startSession("session-1");
-  assert.match(footer.render(), /1\.25\+…/);
+  assert.match(footer.render(), /1\.25/);
+  assert.doesNotMatch(footer.render(), /|n\/a|…/);
 
   t.mock.timers.tick(500);
 
-  assert.match(footer.render(), /1\.25\+n\/a/);
+  assert.match(footer.render(), /1\.25/);
+  assert.doesNotMatch(footer.render(), /|n\/a|…/);
 });
 
 test("ignores a stale reply after switching sessions", t => {
@@ -176,5 +178,5 @@ test("ignores a stale reply after switching sessions", t => {
     `subagents:cost:v1:reply:${requests[1].requestId}`,
     costReply(requests[1], 0.42),
   );
-  assert.match(footer.render(), /1\.25\+0\.42/);
+  assert.match(footer.render(), /1\.250\.42/);
 });

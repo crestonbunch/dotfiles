@@ -17,6 +17,7 @@ const ICON = {
   input: "",
   model: "",
   output: "",
+  plus: "",
   pullRequest: "",
   reset: "",
   revision: "⬡",
@@ -597,11 +598,9 @@ export default (pi: ExtensionAPI) => {
               : undefined;
           const childCostSegment =
             childCost.status === "available"
-              ? `${childCost.cost.toFixed(2)}${childCost.incomplete ? "+" : ""}`
-              : childCost.status === "loading"
-                ? "…"
-                : "n/a";
-          const costSegment = `${theme.fg("dim", ICON.cost)} ${cost.toFixed(2)}+${childCostSegment}`;
+              ? `${theme.fg("dim", ICON.plus)}${childCost.cost.toFixed(2)}${childCost.incomplete ? theme.fg("dim", ICON.plus) : ""}`
+              : "";
+          const costSegment = `${theme.fg("dim", ICON.cost)} ${cost.toFixed(2)}${childCostSegment}`;
           const line2Left = join(theme, [
             contextSegment,
             tokenSegment,
