@@ -1,7 +1,6 @@
 {
   "lastChangelogVersion": "0.85.1",
   "theme": "dark",
-  "tuiMode": "fullscreen",
   "defaultProvider": "openai-codex",
   "defaultModel": "gpt-6-astra",
   "subagents": {
