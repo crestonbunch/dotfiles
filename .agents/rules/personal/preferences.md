@@ -17,22 +17,22 @@ Provider: `openai-codex`. These are child defaults, not a requirement to use eve
 | Agent | Model | Effort | Scope |
 | --- | --- | --- | --- |
 | `explorer` | `gpt-6-luna` | high | Bounded read-only search and discovery across local code, MCP, and web sources; report evidence, no review or edits |
-| `mechanical-editor` | `gpt-6-luna` | low | Explicit localized transformations; no design decisions or review |
-| `worker` | `gpt-6-sol` | medium | One approved implementation/debugging slice, including focused tests |
-| `validator` | `gpt-6-luna` | low | Specified checks and factual failure reporting; no fixes or code review |
+| `advisor` | `gpt-6-astra` | medium | Recommend implementation direction and bounded decisions; parent confirms the plan |
+| `worker` | `gpt-6-sol` | medium | Mechanical work, existing-feature changes, plumbing, and bounded debugging with tests |
+| `builder` | `gpt-6-sol` | high | Design and implement larger new-feature or novel technical slices with tests |
 | `reviewer` | `gpt-6-luna` | high | One independent review angle; use Sol when extra depth is needed |
 
 - Choose the cheapest capable model, effort, context, and tools for each assignment. Luna and Sol are available at low, medium, and high; Luna/high is a strong option for serious review. Do not default the fleet to Sol/high or add model diversity for its own sake.
-- Decompose before escalating. If a task exceeds its role, return the evidence and exact unresolved question to the parent. The parent decides whether to narrow it, change to Luna/high or Sol at an appropriate effort, use Astra/low or Astra/medium for judgment, or resolve it directly. Never silently fall back to a larger model.
+- Decompose before escalating. If a task exceeds its role, return the evidence and exact unresolved question to the parent. The parent decides whether to narrow it, assign an advisor for direction, use a worker or builder for implementation, change model/effort, or resolve it directly. Never silently fall back to a larger model.
 - Astra/low and Astra/medium may be chosen autonomously for bounded parent or child work that warrants them. Astra/high requires an explicit user prompt; do not infer permission from a difficult task.
-- Set effort explicitly. Low for mechanical work, medium for routine reasoning, high for bounded discovery or serious review on Luna or Sol. Importance or reassurance alone does not justify escalation.
-- Verify discovered agents, resolved models, tools, and context before launch. Project overrides may replace user configuration. Generic delegates, oracle threads, and external CLI modes are not the default workflow.
+- Set effort explicitly. Medium for routine implementation and Astra advice, high for bounded discovery, novel feature building, or serious review on Luna or Sol. Use lower effort when sufficient; importance or reassurance alone does not justify escalation.
+- Verify discovered agents, resolved models, tools, and context before launch. Project overrides may replace user configuration. Generic delegates and external CLI modes are not the default workflow.
 
 ## Plan, fan out, and steer
 
 1. The parent establishes the objective, constraints, acceptance criteria, dependencies, and user-owned decisions. For complex work, maintain a compact lane board: task, repo/cwd/ref, owner, claimed files/contracts, workspace, model/effort, dependencies, status, next gate, and output.
 2. Fan out independent discovery questions by source or code seam. Give each child a fresh, self-contained packet: objective, exact paths/ref, relevant evidence, authority/edit boundary, expected output, validation, and stop/ask conditions. Fork only when a compact packet cannot preserve necessary history.
-3. The parent checks the evidence and approves a plan before implementation. Fan out only independent implementation slices; sequence dependencies and shared contracts. Predeclared stages may proceed only within the parent's approved plan. New scope or design choices return to the parent.
+3. For consequential direction, use the advisor to weigh options; the parent checks the evidence and approves a plan before implementation. Fan out only independent implementation slices; sequence dependencies and shared contracts. Predeclared stages may proceed only within the parent's approved plan. New scope or cross-lane design choices return to the parent; builders may decide local design within their approved slice.
 4. Keep assignments narrow. A child stops after its deliverable and targeted validation. Route unrelated follow-ups separately; children do not delegate or autonomously expand their task.
 5. Use one async scripted workflow for a coordinated multi-step/fanout run. Keep safe independent work moving while children run. When only async work remains, yield for native completion notifications rather than polling or blocking merely to wait.
 6. The parent handles supervisor questions, checks meaningful progress, and steers a specific live child when evidence changes. Confirm steering delivery; acknowledgment is not proof of compliance. Resume only a confirmed resumable child for a related follow-up; model/role changes need a fresh assignment. Do not start a replacement writer until the previous owner has stopped and its state is known.
@@ -43,7 +43,7 @@ Provider: `openai-codex`. These are child defaults, not a requirement to use eve
 - One writer per cwd/workspace, including the parent and commands that modify generated files. Concurrent writers require isolated workspaces based on recorded revisions, even when their assigned files differ. Read-only agents may share a stable checkout; review an exact revision or frozen candidate, not a moving target.
 - Follow `jj.md` for ownership, revisions, integration permission, and cleanup. Use separate jj workspaces in jj repos; managed Git worktrees only where appropriate, from a clean checkout. Do not assume the plugin's Git worktree flag allocates jj workspaces. Keep workspaces outside extension auto-discovery.
 - Record explicit cwd, base revision, claimed files/contracts, setup requirements, and integration order before writing. Isolation does not solve overlapping design decisions; the parent resolves shared interfaces and conflicts.
-- One owner per shared test run. Reuse exact-revision results; duplicate validation only for a specific verification need. Validators may create expected test/build artifacts, so isolate or serialize them with writers and other shared-resource users.
+- One owner per shared test run. Reuse exact-revision results; duplicate validation only for a specific verification need. Tests may create expected build artifacts, so isolate or serialize checks with writers and other shared-resource users.
 - Keep durable handoffs: changed files/diff or revision, commands and results, remaining risks, blockers, next action, and artifact paths. Use managed report outputs, not scratch files in repo roots. Preserve incomplete work; no hard tool budgets for mutation-capable children.
 - Arrange integration follow-up for every workspace. Obtain required integration authority, integrate serially with one owner, and validate the combined result. Clean up only after durable handoff, required review/integration, and confirmation no active run owns the workspace.
 
