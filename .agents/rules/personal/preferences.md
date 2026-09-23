@@ -16,10 +16,7 @@ Provider: `openai-codex`. These are child defaults, not a requirement to use eve
 
 | Agent | Model | Effort | Scope |
 | --- | --- | --- | --- |
-| `lookup` | `gpt-6-luna` | low | Literal text search, extraction, summaries; no analysis or review |
-| `scout` | `gpt-6-luna` | medium | Bounded code search and basic data-flow analysis; no edits or review |
-| `collector` | `gpt-6-luna` | low | A specified read-only MCP query; evidence with provenance, no remote changes |
-| `researcher` | `gpt-6-luna` | medium | One external factual question with sources; no architecture or final judgment |
+| `explorer` | `gpt-6-luna` | high | Bounded read-only search and discovery across local code, MCP, and web sources; report evidence, no review or edits |
 | `mechanical-editor` | `gpt-6-luna` | low | Explicit localized transformations; no design decisions or review |
 | `worker` | `gpt-6-sol` | medium | One approved implementation/debugging slice, including focused tests |
 | `validator` | `gpt-6-luna` | low | Specified checks and factual failure reporting; no fixes or code review |
@@ -28,13 +25,13 @@ Provider: `openai-codex`. These are child defaults, not a requirement to use eve
 - Choose the cheapest capable model, effort, context, and tools for each assignment. Luna and Sol are available at low, medium, and high; Luna/high is a strong option for serious review. Do not default the fleet to Sol/high or add model diversity for its own sake.
 - Decompose before escalating. If a task exceeds its role, return the evidence and exact unresolved question to the parent. The parent decides whether to narrow it, change to Luna/high or Sol at an appropriate effort, use Astra/low or Astra/medium for judgment, or resolve it directly. Never silently fall back to a larger model.
 - Astra/low and Astra/medium may be chosen autonomously for bounded parent or child work that warrants them. Astra/high requires an explicit user prompt; do not infer permission from a difficult task.
-- Set effort explicitly. Low for lookup/mechanical work, medium for routine reasoning, high for serious review or demonstrated difficulty on Luna or Sol. Importance or reassurance alone does not justify escalation.
+- Set effort explicitly. Low for mechanical work, medium for routine reasoning, high for bounded discovery or serious review on Luna or Sol. Importance or reassurance alone does not justify escalation.
 - Verify discovered agents, resolved models, tools, and context before launch. Project overrides may replace user configuration. Generic delegates, oracle threads, and external CLI modes are not the default workflow.
 
 ## Plan, fan out, and steer
 
 1. The parent establishes the objective, constraints, acceptance criteria, dependencies, and user-owned decisions. For complex work, maintain a compact lane board: task, repo/cwd/ref, owner, claimed files/contracts, workspace, model/effort, dependencies, status, next gate, and output.
-2. Fan out independent collection questions by source or code seam. Give each child a fresh, self-contained packet: objective, exact paths/ref, relevant evidence, authority/edit boundary, expected output, validation, and stop/ask conditions. Fork only when a compact packet cannot preserve necessary history.
+2. Fan out independent discovery questions by source or code seam. Give each child a fresh, self-contained packet: objective, exact paths/ref, relevant evidence, authority/edit boundary, expected output, validation, and stop/ask conditions. Fork only when a compact packet cannot preserve necessary history.
 3. The parent checks the evidence and approves a plan before implementation. Fan out only independent implementation slices; sequence dependencies and shared contracts. Predeclared stages may proceed only within the parent's approved plan. New scope or design choices return to the parent.
 4. Keep assignments narrow. A child stops after its deliverable and targeted validation. Route unrelated follow-ups separately; children do not delegate or autonomously expand their task.
 5. Use one async scripted workflow for a coordinated multi-step/fanout run. Keep safe independent work moving while children run. When only async work remains, yield for native completion notifications rather than polling or blocking merely to wait.

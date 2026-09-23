@@ -8,6 +8,12 @@
     "defaultModel": "openai-codex/gpt-6-luna",
     "defaultThinking": "low",
     "agentOverrides": {
+      "scout": {
+        "disabled": true
+      },
+      "researcher": {
+        "disabled": true
+      },
       "delegate": {
         "disabled": true
       },
