@@ -1,9 +1,9 @@
 ---
 name: researcher
-description: Terra/medium: one bounded external factual question with cited sources; no design or final acceptance.
+description: Luna/medium: one bounded external factual question with cited sources; no design or final acceptance.
 advertise: true
 tools: read, web_search, fetch_content, get_search_content, source_check, contact_supervisor
-model: openai-codex/gpt-5.6-terra
+model: openai-codex/gpt-6-luna
 thinking: medium
 systemPromptMode: replace
 inheritProjectContext: true

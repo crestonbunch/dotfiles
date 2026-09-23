@@ -3,7 +3,7 @@ name: lookup
 description: Luna/low: literal text lookup, extraction, and summaries only; no analysis, edits, or review.
 advertise: true
 tools: read, grep, find, ls, contact_supervisor
-model: openai-codex/gpt-5.6-luna
+model: openai-codex/gpt-6-luna
 thinking: low
 systemPromptMode: replace
 inheritProjectContext: true

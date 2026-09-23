@@ -1,10 +1,10 @@
 ---
 name: scout
-description: Terra/low: bounded code search and basic data-flow mapping; no edits, design decisions, or review.
+description: Luna/medium: bounded code search and basic data-flow mapping; no edits, design decisions, or review.
 advertise: true
 tools: read, grep, find, ls, contact_supervisor
-model: openai-codex/gpt-5.6-terra
-thinking: low
+model: openai-codex/gpt-6-luna
+thinking: medium
 systemPromptMode: replace
 inheritProjectContext: true
 inheritSkills: false

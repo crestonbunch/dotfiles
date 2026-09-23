@@ -1,10 +1,10 @@
 ---
 name: reviewer
-description: Sol/medium: detailed read-only review of one assigned angle; use high effort for serious review. Astra owns coherence and acceptance.
+description: Luna/high: detailed read-only review of one assigned angle; the parent owns coherence and acceptance.
 advertise: true
 tools: read, grep, find, ls, contact_supervisor
-model: openai-codex/gpt-5.6-sol
-thinking: medium
+model: openai-codex/gpt-6-luna
+thinking: high
 systemPromptMode: replace
 inheritProjectContext: true
 inheritGlobalContext: true

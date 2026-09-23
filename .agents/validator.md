@@ -1,9 +1,9 @@
 ---
 name: validator
-description: Terra/low: run parent-specified checks and report factual results; no fixes, code review, or autonomous debugging.
+description: Luna/low: run parent-specified checks and report factual results; no fixes, code review, or autonomous debugging.
 advertise: true
 tools: read, grep, find, ls, bash, contact_supervisor
-model: openai-codex/gpt-5.6-terra
+model: openai-codex/gpt-6-luna
 thinking: low
 systemPromptMode: replace
 inheritProjectContext: true

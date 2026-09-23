@@ -1,9 +1,9 @@
 ---
 name: collector
-description: Terra/low: one parent-specified read-only MCP query with provenance; no remote changes or open-ended investigation.
+description: Luna/low: one parent-specified read-only MCP query with provenance; no remote changes or open-ended investigation.
 advertise: true
 tools: read, mcp, contact_supervisor
-model: openai-codex/gpt-5.6-terra
+model: openai-codex/gpt-6-luna
 thinking: low
 systemPromptMode: replace
 inheritProjectContext: true

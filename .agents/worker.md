@@ -1,10 +1,10 @@
 ---
 name: worker
-description: Sol/medium: one approved implementation or debugging slice with focused tests; escalate scope/design changes to Astra.
+description: Sol/medium: one approved implementation or debugging slice with focused tests; escalate scope/design changes to the parent.
 advertise: true
 aliases: developer, coder, implementer, develop
 tools: read, grep, find, ls, bash, edit, write, contact_supervisor
-model: openai-codex/gpt-5.6-sol
+model: openai-codex/gpt-6-sol
 thinking: medium
 systemPromptMode: replace
 inheritProjectContext: true

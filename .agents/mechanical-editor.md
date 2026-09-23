@@ -1,9 +1,9 @@
 ---
 name: mechanical-editor
-description: Terra/low: explicit localized transformations and specified checks; no design decisions or review.
+description: Luna/low: explicit localized transformations and specified checks; no design decisions or review.
 advertise: true
 tools: read, grep, find, ls, bash, edit, write, contact_supervisor
-model: openai-codex/gpt-5.6-terra
+model: openai-codex/gpt-6-luna
 thinking: low
 systemPromptMode: replace
 inheritProjectContext: true
