@@ -1,16 +1,12 @@
 ---
-description: Test design and review; Software Engineering at Google
+description: Test design and review
 alwaysApply: true
 ---
 
 # Testing
 
-- **Unchanging tests.** Refactors, features, and bug fixes should preserve existing tests. Add coverage for new behavior and missed cases. Update expectations for changed requirements. Refactor breaks a test? Check for behavior changes or the wrong test boundary before editing expectations.
-- **Public APIs.** Test the chosen unit's consumer-facing contract, not every language-public method. Helpers through callers; reusable units can have their own tests.
-- **State over interactions.** Assert results and observable state. Interactions when state testing is impractical or the call itself matters: required effects, expensive-call limits. Prefer state-changing calls; avoid incidental call counts, arguments, and ordering.
-- **Behaviors, not methods.** One behavior per test; clear given/when/then. Names convey action, outcome, and relevant conditions.
-- **No test logic.** Straight-line code; explicit inputs and expected values. No mental computation to find the expected answer. Avoid loops, branches, and derived expectations, even string concatenation. Assertion syntax and clear construction helpers are fine; don't reproduce production logic.
-- **DAMP over DRY.** Complete, concise, self-contained tests. Duplication is fine. Share setup only when clearer; keep behavior-relevant details visible.
-- **Useful failures.** Expected result, actual result, relevant inputs.
-
-Sources: _Software Engineering at Google_, [ch. 12](https://abseil.io/resources/swe-book/html/ch12.html) and [ch. 13](https://abseil.io/resources/swe-book/html/ch13.html) (interaction-testing exceptions).
+- Preserve existing tests for refactors and behavior-preserving fixes. Add tests for new behavior and missed cases; change expectations only for changed requirements.
+- Test a unit's consumer-facing behavior through its public contract. Test helpers through callers unless independently reusable.
+- Prefer observable state over call assertions; assert interactions only when the call itself matters or state is impractical to observe.
+- One behavior per test, with a name and failure that explain the scenario and expected result.
+- Keep tests straight-line, self-contained, and explicit. Avoid branches, loops, and computed expectations that reproduce production logic. Duplication is fine when clearer than shared setup.

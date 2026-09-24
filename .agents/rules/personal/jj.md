@@ -5,28 +5,16 @@ alwaysApply: true
 
 # jj / VCS
 
-- Prefer jj in jj workspaces; otherwise use the repo's VCS.
-- Before edits: check `jj status` and current revision. `jj new` when needed to separate work; don't disrupt another agent's active revision.
-- Prefer one cohesive revision for related changes to the same task. Squash follow-up edits into that revision instead of creating a separate revision for every user prompt. Keep changes separate when they have distinct ownership or should be reviewed independently.
-- At the end of each logical step, commit completed changes with a non-empty descriptive message; don't wait until the entire task is finished. Don't leave completed edits in an uncommitted working-copy revision or leave non-empty task-owned revisions without descriptions. Never run `jj commit` on a revision with no changes. The fresh empty working-copy revision created after `jj commit` is expected and may remain undescribed. Commit only task-owned changes; resolve mixed ownership before finishing.
-- **Owned** = assigned to this task, no other worker's changes. Current/unpublished does not imply owned.
-- Autonomous describe/split/squash/rebase/abandon: owned, unpublished revisions only; preserve user work and don't affect other agents.
-- Before rewriting: inspect affected descendants and workspace ownership. jj can rewrite descendants automatically.
-- Ask before shared/published history edits, discarding user work, or force-push. Unclear ownership? Ask.
-- Read-only review: `--ignore-working-copy` avoids snapshotting concurrent edits; sees recorded state, not unsnapshotted changes.
-- Git-only: no commits unless requested. Bookmarks/PR creation: permission required unless already requested.
+- Prefer jj in jj workspaces; otherwise use the repo's VCS. Before edits, check status and revision. Separate work from another agent's active revision.
+- Keep related task changes in one cohesive revision. Commit completed steps with a descriptive message; leave only the fresh empty working-copy revision undescribed. Never commit an empty revision or unrelated changes.
+- **Owned** means assigned to this task, not merely current/unpublished. Rewrite only owned, unpublished history after checking descendants and workspace ownership. Ask before changing shared/published history, discarding user work, or force-pushing; ask if ownership is unclear.
+- Git-only: do not commit unless requested. Bookmarks and PR creation require permission. For read-only jj review, `--ignore-working-copy` avoids snapshotting concurrent work.
 
 ## Workspaces
 
-- One writer per workspace. Concurrent subagents may work in separate jj workspaces under `~/.workspaces/`, each based on a fixed revision. Coordinate assignments that may edit overlapping files.
-- Await explicit integration instructions. No main-line integration or workspace removal without permission. Authorization to integrate a workspace includes the cleanup below and does not extend to unrelated existing workspaces.
-- When a task uses multiple workspaces, arrange a follow-up to integrate every task workspace after its work finishes. Once integration is authorized, coordinate overlapping edits and verify the combined result.
-- After integrating a workspace into the main line, forget the integrated workspace with `jj workspace forget` and abandon task-owned empty revisions left behind by integration. Verify that all intended changes are preserved and no active workspace uses those revisions before cleanup. Don't leave empty integration commits; the main workspace's fresh empty working-copy revision remains exempt. Forgetting a workspace does not authorize deleting its directory.
-- Don't modify another agent's workspace/revisions without coordination; don't check out its active revision.
-- Run jj from your own workspace. Protect shared test/build resources.
+- One writer per workspace. Parallel writers use separate jj workspaces under `~/.workspaces/`, based on recorded revisions; coordinate overlapping files and shared test resources. Run jj from your own workspace; never check out another agent's active revision.
+- Await integration authorization. Integrate each task workspace serially, verify the combined result, then forget integrated workspaces and abandon task-owned empty revisions. Verify intended changes are preserved and no active workspace uses those revisions. Do not leave empty integration commits. Forgetting does not authorize deleting directories or unrelated workspaces.
 
 ## Messages
 
-Commit as the configured user only. Never override author/committer identity to credit an agent or another person. No `Co-authored-by`, co-author lists, or attribution trailers.
-
-Repo conventions first. Otherwise: specific imperative subject, ≤70 characters, no trailing punctuation. Body explains motivation absent from diff. Style: `prose.md`.
+Commit as the configured user only. Never override identity or add agent/co-author attribution. Follow repo conventions; otherwise use an imperative subject ≤70 characters without trailing punctuation. Explain motivation in the body when the diff does not.
