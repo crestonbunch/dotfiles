@@ -52,7 +52,6 @@
   "packages": [
     "npm:pi-subagents",
     "npm:pi-mcp-adapter",
-    "npm:pi-web-access",
-    "npm:@giuseppe.trisciuoglio/pi-rules@1.2.0"
+    "npm:pi-web-access"
   ]
 }

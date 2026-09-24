@@ -11,7 +11,7 @@ inheritSkills: false
 defaultContext: fresh
 async: true
 acceptanceRole: read-only
-extensions: /Users/creston/.pi/agent/npm/node_modules/pi-mcp-adapter/index.ts, /Users/creston/.pi/agent/npm/node_modules/pi-web-access/index.ts, /Users/creston/.pi/agent/npm/node_modules/@giuseppe.trisciuoglio/pi-rules/src/index.ts
+extensions: /Users/creston/.pi/agent/npm/node_modules/pi-mcp-adapter/index.ts, /Users/creston/.pi/agent/npm/node_modules/pi-web-access/index.ts, /Users/creston/.pi/agent/extensions/personal-rules.ts
 completionGuard: false
 ---
 
