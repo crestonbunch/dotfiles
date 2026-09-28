@@ -69,17 +69,27 @@
 !.pi/agent/settings.json
 !.pi/agent/extensions/
 !.pi/agent/extensions/claude-footer.ts
+!.pi/agent/extensions/personal-rules.ts
 !.pi/agent/extensions/zellij-pane-title.ts
+!.pi/agent/extensions/subagent/
+!.pi/agent/extensions/subagent/config.json
+!.pi/agent/extensions/zellij-subagents/
+!.pi/agent/extensions/zellij-subagents/README.md
+!.pi/agent/extensions/zellij-subagents/*.mjs
+!.pi/agent/extensions/zellij-subagents/*.ts
 !.pi/agent/bin/
 .pi/agent/bin/*
 !.pi/agent/bin/apply-pi-subagents-child-cost.mjs
 !.pi/agent/patches/
 .pi/agent/patches/*
 !.pi/agent/patches/pi-subagents-0.66.0-child-cost-api.patch.b64
+!.pi/agent/patches/pi-subagents-0.66.0-child-cost-api-v1-to-v2.patch.b64
 !.pi/agent/tests/
 .pi/agent/tests/*
 !.pi/agent/tests/claude-footer.test.mjs
+!.pi/agent/tests/personal-rules.test.mjs
 !.pi/agent/tests/pi-subagents-child-cost-patch.test.mjs
+!.pi/agent/tests/zellij-pane-title.test.mjs
 
 # scripts
 !.local/
