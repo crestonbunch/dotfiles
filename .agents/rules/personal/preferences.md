@@ -16,8 +16,8 @@ Provider: `openai-codex`. Defaults, not fixed limits:
 | --- | --- | --- | --- |
 | `explorer` | `gpt-6-luna` | high | Bounded read-only discovery across code, MCP, and web sources |
 | `advisor` | `gpt-6-astra` | medium | Recommend decisions and implementation direction; parent approves |
-| `worker` | `gpt-6-sol` | medium | Mechanical edits, existing features, plumbing, debugging |
-| `builder` | `gpt-6-sol` | high | Larger new features and novel technical designs |
+| `worker` | `gpt-6.1-sol` | medium | Mechanical edits, existing features, plumbing, debugging |
+| `builder` | `gpt-6.1-sol` | high | Larger new features and novel technical designs |
 | `reviewer` | `gpt-6-luna` | high | Fresh read-only review of the final candidate; use Sol if deeper review is needed |
 
 Verify agents, models, tools, and project overrides before launch. Children return out-of-scope questions to the parent; no silent fallback or scope expansion.

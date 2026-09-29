@@ -4,7 +4,7 @@ description: Sol/medium: mechanical edits, existing-feature changes, plumbing, a
 advertise: true
 aliases: developer, coder, implementer, develop
 tools: read, grep, find, ls, bash, edit, write, contact_supervisor
-model: openai-codex/gpt-6-sol
+model: openai-codex/gpt-6.1-sol
 thinking: medium
 systemPromptMode: replace
 inheritProjectContext: true
