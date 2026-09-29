@@ -5,7 +5,7 @@ alwaysApply: true
 
 # Preferences
 
-- Default parent: GPT-6 Sol/medium. The parent owns scope, plan, contracts, integration, and acceptance; children advise or execute within assigned boundaries.
+- Default parent: GPT-6.1 Sol/high. The parent owns scope, plan, contracts, integration, and acceptance; children advise or execute within assigned boundaries.
 - Choose Astra/low or medium autonomously when useful. Astra/high requires an explicit user prompt. Set effort explicitly; use the cheapest capable model and context.
 
 ## Roles

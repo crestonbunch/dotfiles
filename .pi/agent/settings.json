@@ -3,8 +3,8 @@
   "theme": "dark",
   "tuiMode": "fullscreen",
   "defaultProvider": "openai-codex",
-  "defaultModel": "gpt-6-sol",
-  "defaultThinkingLevel": "medium",
+  "defaultModel": "gpt-6.1-sol",
+  "defaultThinkingLevel": "high",
   "subagents": {
     "defaultModel": "openai-codex/gpt-6-luna",
     "defaultThinking": "low",
