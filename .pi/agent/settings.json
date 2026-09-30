@@ -50,6 +50,9 @@
       ]
     }
   },
+  "skills": [
+    "!**/synced/a54d0b5f-e450-451e-9c10-1cce760862dd_a03fb855-34da-4e54-9b8a-a37e92fdb4fb/{docx,import-memory,morning,pdf,pptx,skill-creator,xlsx}/SKILL.md"
+  ],
   "packages": [
     "npm:pi-subagents",
     "npm:pi-mcp-adapter",
