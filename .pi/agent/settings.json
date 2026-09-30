@@ -5,7 +5,9 @@
   "defaultProvider": "openai-codex",
   "defaultModel": "gpt-6.1-sol",
   "defaultThinkingLevel": "high",
-  "defaultTools": ["+codemode"],
+  "defaultTools": [
+    "+codemode"
+  ],
   "subagents": {
     "defaultModel": "openai-codex/gpt-6-luna",
     "defaultThinking": "low",
@@ -56,7 +58,6 @@
   ],
   "packages": [
     "npm:pi-subagents",
-    "npm:pi-mcp-adapter",
     "npm:pi-web-access"
   ]
 }
