@@ -32,6 +32,9 @@ const renderPersonalRules = (rules: PersonalRule[]): string =>
 export const loadPersonalRules = (rulesDir: string): string =>
   renderPersonalRules(readPersonalRules(rulesDir));
 
+// Own only this marked block; preserve forced role and child-boundary text verbatim.
+const forcedRulesBlock = /(?:\n\n)?<!-- pi-personal-rules:start -->[\s\S]*?<!-- pi-personal-rules:end -->/g;
+
 export default (
   pi: ExtensionAPI,
   rulesDir = join(homedir(), ".agents", "rules", "personal"),
@@ -54,10 +57,19 @@ export default (
 
   pi.on("before_agent_start", event => {
     const content = renderPersonalRules(rules);
-    if (content) {
-      event.systemPromptOptions.sections.personal_rules = `## Personal rules\n\n${content}`;
+    const options = event.systemPromptOptions;
+    const section = content ? `## Personal rules\n\n${content}` : undefined;
+    if (section) {
+      options.sections.personal_rules = section;
     } else {
-      delete event.systemPromptOptions.sections.personal_rules;
+      delete options.sections.personal_rules;
+    }
+    // Pi renders forceSystemPrompt instead of sections for rewritten child prompts.
+    if (typeof options.forceSystemPrompt === "string") {
+      const base = options.forceSystemPrompt.replace(forcedRulesBlock, "");
+      options.forceSystemPrompt = section
+        ? `${base}${base ? "\n\n" : ""}<!-- pi-personal-rules:start -->\n${section}\n<!-- pi-personal-rules:end -->`
+        : base;
     }
   });
 };

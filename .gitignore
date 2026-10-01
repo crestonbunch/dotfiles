@@ -68,6 +68,8 @@
 !.pi/agent/
 !.pi/agent/AGENTS.md
 !.pi/agent/settings.json
+!.pi/agent/child-extensions/
+!.pi/agent/child-extensions/explorer-mcp.ts
 !.pi/agent/extensions/
 !.pi/agent/extensions/claude-footer.ts
 !.pi/agent/extensions/personal-rules.ts
@@ -89,6 +91,7 @@
 .pi/agent/tests/*
 !.pi/agent/tests/claude-footer.test.mjs
 !.pi/agent/tests/personal-rules.test.mjs
+!.pi/agent/tests/explorer-mcp.test.mjs
 !.pi/agent/tests/pi-subagents-child-cost-patch.test.mjs
 !.pi/agent/tests/zellij-pane-title.test.mjs
 
