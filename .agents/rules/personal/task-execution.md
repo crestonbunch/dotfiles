@@ -13,4 +13,10 @@ Work autonomously on routine, in-scope steps within existing approval, VCS, owne
 
 Inspect relevant callers, tests, and failure paths. Look for evidence that would falsify the proposed solution, not just confirm it. Only mutation-authorized agents implement or repair changes. Run relevant validation, repair failures caused by your diff within approved scope, and retest. Preserve the partial diff and report diagnostic context when repair is unsafe, validation is unavailable, new scope is required, or repeated attempts make no progress; do not silently broaden the task.
 
-Finish with verification evidence: changed files or revision, exact checks and results, remaining limitations, and unresolved blockers. Distinguish observed success from assumptions and unverified behavior.
+## Proportional verification
+
+Match process to risk. For a routine, localized change, inspect the relevant code, implement it, add focused regression coverage, and run the affected checks. Stop when the behavior is verified and no concrete blocker remains.
+
+Verification evidence normally means a short handoff: changed files or revision, checks run and results, and any actual blocker or material limitation. Distinguish observed success from assumptions and unverified behavior. Do not create separate evidence packets, logs, hashes, coverage inventories, or repeated summaries unless explicitly requested or needed to resolve a concrete risk. Keep any required runtime evidence fields minimal and factual; they do not justify supplementary reports.
+
+Expand investigation or validation only for a named uncertainty that could materially affect correctness. More evidence is not inherently better.

@@ -24,12 +24,13 @@ Verify agents, models, tools, and project overrides before launch. Children retu
 
 ## Delegation mechanics
 
-- Skip redundant discovery. Review proportionately; parallel writers get separate workspaces only when worthwhile.
-- Start children with `context: "fresh"` and a self-contained packet: goal, cwd/ref, evidence, authority, files/contracts, validation, and stop conditions. Fork only when essential history cannot fit, and say why. Inherited rules are not conversation history.
+- Match delegation to risk and concrete benefit. Routine localized work may be done directly or by one worker. Skip discovery when the relevant code and contract are known; additional stages must address a named uncertainty. Parallel writers get separate workspaces only when worthwhile.
+- Start children with `context: "fresh"` and a concise, self-contained packet: goal, cwd/ref, relevant context, authority, files/contracts, focused validation, and stop conditions. Fork only when essential history cannot fit, and say why. Inherited rules are not conversation history.
 - Children neither delegate nor expand scope. Use async workflows for coordinated fanout. On tooling failure, stop the lane, preserve state, and report before retrying.
 
 ## Workspaces, review, and completion
 
 - One writer per workspace; coordinate tests. Review an exact revision or frozen candidate. Follow `jj.md` for VCS ownership.
 - Large-work routing in `~/.pi/agent/AGENTS.md` authorizes integrating task-owned workspace changes, not unrelated work. Validate the combined result; follow `jj.md` for cleanup.
-- Use a fresh reviewer for large/typical work and significant small-task batches. The parent resolves findings and accepts the result. No unrequested push, PR, shared-branch merge, deploy, or destructive cleanup.
+- Use a fresh reviewer for meaningful behavioral risk, broad changes, or explicit requests, not every small edit. The parent resolves findings and accepts the result. No unrequested push, PR, shared-branch merge, deploy, or destructive cleanup.
+- For routine work, request a short handoff rather than separate reports or optional evidence artifacts. Do not add acceptance gates beyond required runtime/repository checks without a named risk. Stop after focused validation passes and concrete blockers are resolved.

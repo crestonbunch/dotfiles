@@ -23,6 +23,7 @@ const ICON = {
   cost: "",
   directory: "",
   effort: "",
+  generation: "",
   input: "",
   model: "",
   output: "",
@@ -30,6 +31,7 @@ const ICON = {
   pullRequest: "",
   reset: "",
   jjWorkspace: "⬡",
+  request: "",
   session: "",
   week: "",
 } as const;
@@ -39,6 +41,55 @@ const CODEX_BASE_URL = "https://chatgpt.com/backend-api";
 const USAGE_REFRESH_INTERVAL_MS = 60_000;
 const SUBAGENT_COST_REQUEST_EVENT = "subagents:cost:v1:request";
 const SUBAGENT_COST_TIMEOUT_MS = 500;
+const THROUGHPUT_SAMPLE_TYPE = "claude-footer:throughput:v1";
+const GENERATION_SAMPLE_TYPE = "claude-footer:generation-throughput:v1";
+
+type ThroughputSample = {
+  version: 1;
+  sampleId: string;
+  outputTokens: number;
+  elapsedMs: number;
+};
+
+// Read the whole file, like the token/cost totals, not just the active branch.
+// Only paired measurements contribute; historical untimed outputs do not.
+const averageThroughput = (
+  ctx: ExtensionContext,
+  sampleType: string,
+  icon: string,
+): string | undefined => {
+  const seen = new Set<string>();
+  let outputTokens = 0;
+  let elapsedMs = 0;
+  for (const entry of ctx.sessionManager.getEntries()) {
+    if (entry.type !== "custom" || entry.customType !== sampleType) {
+      continue;
+    }
+    const sample = entry.data as Partial<ThroughputSample> | undefined;
+    if (
+      !sample ||
+      sample.version !== 1 ||
+      typeof sample.sampleId !== "string" ||
+      !sample.sampleId ||
+      seen.has(sample.sampleId) ||
+      typeof sample.outputTokens !== "number" ||
+      !Number.isFinite(sample.outputTokens) ||
+      sample.outputTokens <= 0 ||
+      typeof sample.elapsedMs !== "number" ||
+      !Number.isFinite(sample.elapsedMs) ||
+      sample.elapsedMs <= 0
+    ) {
+      continue;
+    }
+    seen.add(sample.sampleId);
+    outputTokens += sample.outputTokens;
+    elapsedMs += sample.elapsedMs;
+  }
+  const rate = outputTokens / (elapsedMs / 1000);
+  return Number.isFinite(rate) && rate > 0
+    ? `${icon} ${rate.toFixed(1)} tps`
+    : undefined;
+};
 
 const FILLED = "▰";
 const EMPTY = "▱";
@@ -290,6 +341,125 @@ export default (pi: ExtensionAPI) => {
   let childCostRequestVersion = 0;
   let childCostTimeout: ReturnType<typeof setTimeout> | undefined;
   let unsubscribeChildCost: (() => void) | undefined;
+  let pendingResponse: {
+    sessionId: string;
+    startedAt: number;
+    generationStartedAt?: number;
+    thinkingObserved: boolean;
+    nonReasoningModel: boolean;
+  } | undefined;
+
+  // message_start happens after the provider's stream starts and misses latency.
+  // This effective model-call interval includes auth/preparation and reasoning,
+  // but ends before tools execute and never includes idle time between calls.
+  pi.on("context_with_system", (_event, ctx) => {
+    pendingResponse =
+      ctx.mode === "tui"
+        ? {
+            sessionId: ctx.sessionManager.getSessionId(),
+            startedAt: performance.now(),
+            thinkingObserved: false,
+            nonReasoningModel: ctx.model?.reasoning === false,
+          }
+        : undefined;
+  });
+
+  // Client-observed streaming estimate: batching/network delay can skew it.
+  // Structural events and reasoning do not start visible response generation.
+  pi.on("message_update", (event, ctx) => {
+    const pending = pendingResponse;
+    if (
+      ctx.mode !== "tui" ||
+      !pending ||
+      pending.sessionId !== ctx.sessionManager.getSessionId() ||
+      event.message.role !== "assistant"
+    ) {
+      return;
+    }
+    const update = event.assistantMessageEvent;
+    if (
+      update.type === "thinking_start" ||
+      update.type === "thinking_delta" ||
+      update.type === "thinking_end"
+    ) {
+      pending.thinkingObserved = true;
+    }
+    if (
+      pending.generationStartedAt === undefined &&
+      (update.type === "text_delta" || update.type === "toolcall_delta") &&
+      update.delta.length > 0
+    ) {
+      pending.generationStartedAt = performance.now();
+    }
+  });
+
+  pi.on("message_end", (event, ctx) => {
+    if (event.message.role !== "assistant") {
+      return;
+    }
+    const pending = pendingResponse;
+    pendingResponse = undefined;
+    const completedAt = performance.now();
+    const elapsedMs = pending ? completedAt - pending.startedAt : 0;
+    const outputTokens = event.message.usage.output;
+    if (
+      ctx.mode !== "tui" ||
+      !pending ||
+      pending.sessionId !== ctx.sessionManager.getSessionId() ||
+      event.message.stopReason === "error" ||
+      event.message.stopReason === "aborted" ||
+      !Number.isFinite(outputTokens) ||
+      outputTokens <= 0 ||
+      !Number.isFinite(elapsedMs) ||
+      elapsedMs <= 0
+    ) {
+      return;
+    }
+    pi.appendEntry<ThroughputSample>(THROUGHPUT_SAMPLE_TYPE, {
+      version: 1,
+      sampleId: randomUUID(),
+      outputTokens,
+      elapsedMs,
+    });
+    const reasoning = event.message.usage.reasoning;
+    const thinkingObserved = pending.thinkingObserved ||
+      event.message.content?.some(part => part.type === "thinking");
+    // Never apply total (possibly hidden reasoning) tokens to visible timing.
+    // Finalized effort is authoritative; UI effort alone is not response metadata.
+    const generationTokens = reasoning !== undefined
+      ? (Number.isFinite(reasoning) && reasoning >= 0 && reasoning <= outputTokens
+          ? outputTokens - reasoning
+          : undefined)
+      : (!thinkingObserved &&
+          (pending.nonReasoningModel || event.message.thinkingLevel === "off")
+          ? outputTokens
+          : undefined);
+    const generationMs = pending.generationStartedAt === undefined
+      ? 0
+      : completedAt - pending.generationStartedAt;
+    if (
+      generationTokens !== undefined && generationTokens > 0 &&
+      Number.isFinite(generationMs) && generationMs > 0
+    ) {
+      pi.appendEntry<ThroughputSample>(GENERATION_SAMPLE_TYPE, {
+        version: 1,
+        sampleId: randomUUID(),
+        outputTokens: generationTokens,
+        elapsedMs: generationMs,
+      });
+    }
+    requestRender?.();
+  });
+
+  pi.on("agent_end", () => {
+    pendingResponse = undefined;
+  });
+  pi.on("session_before_switch", () => {
+    pendingResponse = undefined;
+  });
+  pi.on("session_before_fork", () => {
+    pendingResponse = undefined;
+  });
 
   const clearChildCostRequest = (): void => {
     if (childCostTimeout) {
@@ -435,6 +605,7 @@ export default (pi: ExtensionAPI) => {
   };
 
   pi.on("session_start", (_event, ctx) => {
+    pendingResponse = undefined;
     if (ctx.mode !== "tui") {
       return;
     }
@@ -523,6 +694,8 @@ export default (pi: ExtensionAPI) => {
             thinking
               ? `${theme.fg("dim", ICON.effort)} ${thinking}`
               : undefined,
+            averageThroughput(ctx, GENERATION_SAMPLE_TYPE, theme.fg("dim", ICON.generation)),
+            averageThroughput(ctx, THROUGHPUT_SAMPLE_TYPE, theme.fg("dim", ICON.request)),
           ]);
           const line1Right = join(theme, directorySegments);
 
@@ -643,6 +816,7 @@ export default (pi: ExtensionAPI) => {
   });
 
   pi.on("session_shutdown", () => {
+    pendingResponse = undefined;
     alive = false;
     currentCtx = undefined;
     clearSubscriptions();
