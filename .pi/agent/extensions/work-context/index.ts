@@ -8,7 +8,7 @@ import {
 import { directoryQueries, discoverDirectory } from "./discovery.ts";
 
 const DEBOUNCE_MS = 150;
-const instruction = "Optional footer metadata: in codemode, use tools.work_context({...}) with known complete lists for supplied fields when work changes. Do not investigate, retry, or ask permission just to update it; execution cwd is unchanged.";
+const instruction = "Update work_context when switching directories, starting PR work, or finishing work. Piggyback tools.work_context({...}) into existing codemode scripts; supplied lists must be complete. Use known paths/URLs only; never investigate, retry, or ask permission. Execution cwd is unchanged.";
 const forcedBlock = /(?:\n\n)?<!-- pi-work-context:start -->[\s\S]*?<!-- pi-work-context:end -->/g;
 
 type State = {

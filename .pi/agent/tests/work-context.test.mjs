@@ -458,8 +458,22 @@ test("stable short instructions preserve structured and forced child prompts wit
   assert.ok(first.startsWith("Role\nChild boundary: no delegation."));
   assert.equal(first.split("<!-- pi-work-context:start -->").length, 2);
   assert.ok(event.systemPromptOptions.sections.work_context.length < 300);
-  assert.ok(first.includes("Do not investigate, retry, or ask permission"));
+  assert.ok(first.includes("never investigate, retry, or ask permission"));
   assert.ok(!first.includes("/work/repo"));
+});
+
+test("instructions tie context updates to work changes using complete known lists", t => {
+  const f = setUp(t);
+  const event = { systemPromptOptions: { sections: {} } };
+
+  f.emit("before_agent_start", event);
+
+  const instruction = event.systemPromptOptions.sections.work_context;
+  assert.ok(instruction.includes("switching directories, starting PR work, or finishing work"));
+  assert.ok(instruction.includes("Piggyback tools.work_context({...}) into existing codemode scripts"));
+  assert.ok(instruction.includes("supplied lists must be complete"));
+  assert.ok(instruction.includes("Use known paths/URLs only"));
+  assert.ok(instruction.includes("Execution cwd is unchanged"));
 });
 
 test("old-session tool contexts cannot restore stale state after a replacement", async t => {
@@ -540,5 +554,5 @@ test("installed Pi loads the tool and renders stable instructions in forced prom
   const second = await runner.emitBeforeAgentStart("task", undefined, first.systemPromptOptions);
   assert.equal(second.systemPromptOptions.forceSystemPrompt, first.systemPromptOptions.forceSystemPrompt);
   assert.ok(second.systemPromptOptions.forceSystemPrompt.startsWith(boundary));
-  assert.ok(second.systemPromptOptions.forceSystemPrompt.includes("in codemode, use tools.work_context({...})"));
+  assert.ok(second.systemPromptOptions.forceSystemPrompt.includes("Piggyback tools.work_context({...}) into existing codemode scripts"));
 });
