@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import { dirname, join } from "node:path";
+import { createRequire } from "node:module";
+import { homedir } from "node:os";
 import { realpathSync } from "node:fs";
 import { test } from "node:test";
 import { createJiti } from "../npm/node_modules/jiti/lib/jiti.mjs";
@@ -14,13 +16,12 @@ const piPackageRoot = join(
   "@earendil-works",
   "pi-coding-agent",
 );
-const bootstrapJiti = createJiti(import.meta.url);
-const { resolveHostPeerAliases } = await bootstrapJiti.import(
-  "../npm/node_modules/pi-subagents/src/runs/background/runner-aliases.ts",
-);
-const { aliases, missing } = resolveHostPeerAliases(piPackageRoot);
-assert.deepEqual(missing, []);
-const jiti = createJiti(import.meta.url, { alias: aliases });
+const hostRequire = createRequire(join(piPackageRoot, "package.json"));
+const jiti = createJiti(import.meta.url, { alias: {
+  "@earendil-works/pi-tui": hostRequire.resolve("@earendil-works/pi-tui"),
+} });
+const { visibleWidth } = await jiti.import("@earendil-works/pi-tui");
+const { SNAPSHOT_EVENT, REQUEST_EVENT } = await jiti.import("../extensions/work-context/core.ts");
 const claudeFooter = await jiti.import("../extensions/claude-footer.ts", {
   default: true,
 });
@@ -29,6 +30,7 @@ const makeEvents = () => {
   const emitter = new EventEmitter();
   return {
     emit: (name, value) => emitter.emit(name, value),
+    listenerCount: name => emitter.listenerCount(name),
     on: (name, handler) => {
       emitter.on(name, handler);
       return () => emitter.off(name, handler);
@@ -36,7 +38,7 @@ const makeEvents = () => {
   };
 };
 
-const setUp = (t, { respond } = {}) => {
+const setUp = (t, { respond, snapshot } = {}) => {
   const handlers = new Map();
   const events = makeEvents();
   let component;
@@ -55,16 +57,17 @@ const setUp = (t, { respond } = {}) => {
       }
     });
   }
+  if (snapshot) events.on(REQUEST_EVENT, request => events.emit(SNAPSHOT_EVENT, { ...snapshot, sessionId: request.sessionId }));
   const pi = {
     events,
-    exec: async () => ({ code: 1, stderr: "", stdout: "" }),
+    exec: async () => { assert.fail("Footer must not execute discovery commands"); },
     on: (name, handler) => handlers.set(name, handler),
   };
   claudeFooter(pi);
 
-  const startSession = sessionId => {
+  const startSession = (sessionId, cwd = "/tmp/project") => {
     const ctx = {
-      cwd: "/tmp/project",
+      cwd,
       getContextUsage: () => ({ contextWindow: 200_000, percent: 10 }),
       mode: "tui",
       model: { contextWindow: 200_000, name: "Test Model", provider: "test" },
@@ -84,6 +87,7 @@ const setUp = (t, { respond } = {}) => {
       thinkingLevel: "off",
       ui: {
         setFooter: factory => {
+          component?.dispose();
           component = factory(tui, theme);
         },
       },
@@ -92,9 +96,9 @@ const setUp = (t, { respond } = {}) => {
     return ctx;
   };
 
-  const render = () => component.render(200).join("\n");
+  const render = (width = 200) => component.render(width).join("\n");
   t.after(() => handlers.get("session_shutdown")?.());
-  return { events, handlers, render, renders: () => renders, startSession };
+  return { dispose: () => component.dispose(), events, handlers, render, renders: () => renders, startSession };
 };
 
 const costReply = (request, cost, incomplete = false) => ({
@@ -192,4 +196,137 @@ test("ignores a stale reply after switching sessions", t => {
     costReply(requests[1], 0.42),
   );
   assert.match(footer.render(), /1\.250\.42/);
+});
+
+const snapshot = {
+  version: 1,
+  directories: [
+    { path: `${homedir()}/projects/alpha`, workspace: "jj-workspace", revision: "abcdefgh", bookmark: "feature-a" },
+    { path: "/other/projects/alpha", workspace: "git-worktree", bookmark: "feature-b" },
+  ],
+  pullRequests: [
+    { repo: "owner/alpha", number: 12, url: "https://github.com/owner/alpha/pull/12" },
+    { repo: "owner/alpha", number: 13, url: "https://github.com/owner/alpha/pull/13" },
+    { repo: "owner/beta", number: 4, url: "https://github.com/owner/beta/pull/4" },
+  ],
+};
+
+test("renders multiple annotated paths and grouped repository PR links", t => {
+  const footer = setUp(t, { snapshot });
+  footer.startSession("session-1");
+  const output = footer.render(500);
+  assert.match(output, /~\/projects\/alpha \[jj-workspace\].*abcdefgh.*feature-a/);
+  assert.match(output, /\/other\/projects\/alpha \[git-worktree\].*feature-b/);
+  assert.match(output, /alpha \x1b\]8;;https:\/\/github.com\/owner\/alpha\/pull\/12\x1b\\#12\x1b\]8;;\x1b\\ \x1b\]8;;https:\/\/github.com\/owner\/alpha\/pull\/13/);
+  assert.match(output, /beta .*#4/);
+});
+
+test("uses owner identity when repository short names are ambiguous", t => {
+  const footer = setUp(t, { snapshot: { ...snapshot, pullRequests: [
+    snapshot.pullRequests[0],
+    { repo: "other/alpha", number: 2, url: "https://github.com/other/alpha/pull/2" },
+  ] } });
+  footer.startSession("session-1");
+  assert.match(footer.render(500), /owner\/alpha .*#12.*other\/alpha .*#2/);
+});
+
+test("falls back to fresh cwd without a provider and ignores wrong sessions", t => {
+  const footer = setUp(t);
+  footer.startSession("session-1", "/first/project");
+  assert.match(footer.render(), /\/first\/project/);
+  footer.events.emit(SNAPSHOT_EVENT, { ...snapshot, sessionId: "other" });
+  assert.doesNotMatch(footer.render(500), /feature-a|#12/);
+  footer.startSession("session-2", "/second/project");
+  assert.match(footer.render(), /\/second\/project/);
+  assert.doesNotMatch(footer.render(), /\/first\/project/);
+});
+
+test("accepts a provider loaded after the footer and requests on tree navigation", t => {
+  const footer = setUp(t);
+  const ctx = footer.startSession("session-1");
+  footer.events.emit(SNAPSHOT_EVENT, { ...snapshot, sessionId: "session-1" });
+  assert.match(footer.render(500), /feature-a/);
+  footer.events.on(REQUEST_EVENT, request => footer.events.emit(SNAPSHOT_EVENT, {
+    version: 1, sessionId: request.sessionId, directories: [{ path: "/tree/branch" }], pullRequests: [],
+  }));
+  footer.handlers.get("session_tree")({}, ctx);
+  assert.match(footer.render(), /\/tree\/branch/);
+  assert.doesNotMatch(footer.render(500), /feature-a|#12/);
+});
+
+test("rejects unsafe hyperlink URLs and strips label control characters", t => {
+  const footer = setUp(t, { snapshot: { ...snapshot,
+    directories: [{ path: "/safe\x1b/path", bookmark: "branch\x07name" }],
+    pullRequests: [{ repo: "bad/repo", number: 1, url: "https://github.com/bad/repo/pull/1\x1b]8;;evil" }],
+  } });
+  footer.startSession("session-1");
+  assert.match(footer.render(), /\/safe\/path.*branchname/);
+  assert.doesNotMatch(footer.render(), /\x1b|\x07|evil|#1/);
+});
+
+test("keeps wide paths and OSC8 links within narrow terminal columns", t => {
+  const footer = setUp(t, { snapshot: { ...snapshot, directories: [{ path: "/工作/项目/alpha" }] } });
+  footer.startSession("session-1");
+  for (const width of [0, 1, 10, 24, 40, 80, 120]) {
+    for (const line of footer.render(width).split("\n")) {
+      assert.ok(visibleWidth(line) <= width, `line exceeds ${width} columns: ${visibleWidth(line)}`);
+    }
+  }
+});
+
+test("cleans snapshot and cost subscriptions on dispose and shutdown", t => {
+  const footer = setUp(t);
+  footer.startSession("session-1");
+  assert.equal(footer.events.listenerCount(SNAPSHOT_EVENT), 1);
+  footer.dispose();
+  assert.equal(footer.events.listenerCount(SNAPSHOT_EVENT), 0);
+  assert.equal(footer.events.listenerCount("subagent:async-complete"), 0);
+  footer.startSession("session-2");
+  assert.equal(footer.events.listenerCount(SNAPSHOT_EVENT), 1);
+  footer.handlers.get("session_shutdown")();
+  assert.equal(footer.events.listenerCount(SNAPSHOT_EVENT), 0);
+});
+
+test("requests a matching snapshot after replacing a disposed session footer", t => {
+  const footer = setUp(t, { snapshot });
+  footer.startSession("session-1");
+  footer.startSession("session-2");
+  assert.match(footer.render(500), /feature-a/);
+  assert.equal(footer.events.listenerCount(SNAPSHOT_EVENT), 1);
+});
+
+
+test("ignores a matching-session snapshot with a malformed directory", t => {
+  const footer = setUp(t, { snapshot });
+  footer.startSession("session-1");
+  const previous = footer.render(500);
+
+  footer.events.emit(SNAPSHOT_EVENT, {
+    ...snapshot, sessionId: "session-1", directories: [{ path: null }],
+  });
+
+  assert.equal(footer.render(500), previous);
+});
+
+test("ignores a matching-session snapshot with a malformed PR", t => {
+  const footer = setUp(t, { snapshot });
+  footer.startSession("session-1");
+  const previous = footer.render(500);
+
+  footer.events.emit(SNAPSHOT_EVENT, {
+    ...snapshot, sessionId: "session-1", pullRequests: [{ url: null }],
+  });
+
+  assert.equal(footer.render(500), previous);
+});
+
+test("does not restart cost subscriptions after footer disposal", t => {
+  const footer = setUp(t);
+  const ctx = footer.startSession("session-1");
+  let requests = 0;
+  footer.events.on("subagents:cost:v1:request", () => { requests += 1; });
+  footer.dispose();
+  footer.handlers.get("tool_execution_end")({ toolName: "subagent" }, ctx);
+  footer.handlers.get("agent_settled")({}, ctx);
+  assert.equal(requests, 0);
 });

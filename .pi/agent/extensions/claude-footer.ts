@@ -1,6 +1,14 @@
 import { randomUUID } from "node:crypto";
 import { request as httpsRequest } from "node:https";
-import { basename } from "node:path";
+import { homedir } from "node:os";
+import {
+  REQUEST_EVENT,
+  SNAPSHOT_EVENT,
+  parsePullRequestUrl,
+  sanitizeDisplayText,
+  type WorkContextSnapshot,
+  type WorkPullRequest,
+} from "./work-context/core.ts";
 import type { AssistantMessage } from "@earendil-works/pi-ai";
 import type {
   ExtensionAPI,
@@ -41,12 +49,6 @@ type Theme = {
 };
 
 type RateLimit = { percent: number; resetsAt?: number; windowSeconds?: number };
-
-type Location = {
-  bookmark: string;
-  pullRequest?: { number: number; url: string };
-  revision: string;
-};
 
 type ChildCost =
   | { status: "loading" }
@@ -273,14 +275,12 @@ const rateSegment = (theme: Theme, limit: RateLimit | undefined): string => {
 };
 
 export default (pi: ExtensionAPI) => {
-  let location: Location = { bookmark: "", revision: "" };
+  let snapshot: WorkContextSnapshot | undefined;
+  let unsubscribeSnapshot: (() => void) | undefined;
+  let unsubscribeAsyncComplete: (() => void) | undefined;
   let sessionLimit: RateLimit | undefined;
   let weekLimit: RateLimit | undefined;
   let requestRender: (() => void) | undefined;
-  let refreshTimer: ReturnType<typeof setTimeout> | undefined;
-  let refreshActive = false;
-  let refreshAgain = false;
-  let lastPullRequestRefresh = 0;
   let lastUsageRefresh = 0;
   let usageActive = false;
   let alive = false;
@@ -420,129 +420,39 @@ export default (pi: ExtensionAPI) => {
     }
   };
 
-  const refreshLocation = async (
-    cwd: string,
-    includePullRequest: boolean,
-  ): Promise<void> => {
-    if (refreshActive) {
-      refreshAgain = true;
-      return;
-    }
-    refreshActive = true;
-
-    try {
-      const [bookmarkResult, revisionResult] = await Promise.all([
-        pi.exec("jj", ["--ignore-working-copy", "--no-pager", "bbt"], {
-          cwd,
-          timeout: 2000,
-        }),
-        pi.exec(
-          "jj",
-          [
-            "--ignore-working-copy",
-            "--no-pager",
-            "log",
-            "--no-graph",
-            "-r",
-            "@",
-            "-T",
-            "change_id.shortest(8)",
-          ],
-          { cwd, timeout: 2000 },
-        ),
-      ]);
-      if (!alive) {
-        return;
-      }
-
-      const bookmark =
-        bookmarkResult.code === 0
-          ? (bookmarkResult.stdout.split("\n")[0] ?? "").trim()
-          : "";
-      const revision =
-        revisionResult.code === 0 ? revisionResult.stdout.trim() : "";
-      const next: Location = { bookmark, revision };
-
-      const now = Date.now();
-      if (
-        includePullRequest &&
-        bookmark &&
-        now - lastPullRequestRefresh >= 30_000
-      ) {
-        lastPullRequestRefresh = now;
-        const result = await pi.exec(
-          "gh",
-          ["pr", "view", bookmark, "--json", "number,url"],
-          { cwd, timeout: 5000 },
-        );
-        if (result.code === 0) {
-          try {
-            const pullRequest = JSON.parse(result.stdout) as {
-              number?: unknown;
-              url?: unknown;
-            };
-            if (
-              typeof pullRequest.number === "number" &&
-              typeof pullRequest.url === "string"
-            ) {
-              next.pullRequest = {
-                number: pullRequest.number,
-                url: pullRequest.url,
-              };
-            }
-          } catch {}
-        }
-      } else if (bookmark === location.bookmark) {
-        next.pullRequest = location.pullRequest;
-      }
-
-      if (!alive) {
-        return;
-      }
-      location = next;
-      requestRender?.();
-    } catch {
-      if (!alive) {
-        return;
-      }
-      location = { bookmark: "", revision: "" };
-      requestRender?.();
-    } finally {
-      refreshActive = false;
-      if (refreshAgain && alive) {
-        refreshAgain = false;
-        void refreshLocation(cwd, false);
-      }
-    }
+  const clearSubscriptions = (): void => {
+    unsubscribeSnapshot?.();
+    unsubscribeSnapshot = undefined;
+    unsubscribeAsyncComplete?.();
+    unsubscribeAsyncComplete = undefined;
+    childCostRequestVersion += 1;
+    clearChildCostRequest();
   };
 
-  const scheduleLocationRefresh = (
-    cwd: string,
-    includePullRequest: boolean,
-  ): void => {
-    if (refreshTimer) {
-      clearTimeout(refreshTimer);
-    }
-    refreshTimer = setTimeout(() => {
-      refreshTimer = undefined;
-      void refreshLocation(cwd, includePullRequest);
-    }, 150);
+  const requestSnapshot = (ctx: ExtensionContext): void => {
+    pi.events.emit(REQUEST_EVENT, { sessionId: ctx.sessionManager.getSessionId() });
   };
 
   pi.on("session_start", (_event, ctx) => {
     if (ctx.mode !== "tui") {
       return;
     }
-    alive = true;
+    clearSubscriptions();
+    snapshot = undefined;
     currentCtx = ctx;
     childCost = { status: "loading" };
 
     ctx.ui.setFooter((tui, theme) => {
-      requestRender = () => tui.requestRender();
+      const renderRequest = () => tui.requestRender();
+      requestRender = renderRequest;
 
       return {
         dispose: () => {
-          requestRender = undefined;
+          if (requestRender === renderRequest) {
+            alive = false;
+            clearSubscriptions();
+            requestRender = undefined;
+          }
         },
         invalidate: () => {},
         render: (width: number): string[] => {
@@ -568,11 +478,34 @@ export default (pi: ExtensionAPI) => {
             context?.contextWindow ?? ctx.model?.contextWindow;
           const model = ctx.model?.name ?? ctx.model?.id ?? "unknown";
           const thinking = ctx.model?.reasoning ? ctx.thinkingLevel : undefined;
-          const directory = basename(ctx.cwd);
-          const pullRequest = location.pullRequest;
-          const pullRequestLink = pullRequest
-            ? `\u001b]8;;${pullRequest.url}\u001b\\#${pullRequest.number}\u001b]8;;\u001b\\`
-            : undefined;
+          const directories = snapshot?.directories.length
+            ? snapshot.directories
+            : [{ path: currentCtx?.cwd ?? ctx.cwd }];
+          const home = homedir();
+          const directorySegments = directories.map(directory => {
+            const path = sanitizeDisplayText(directory.path);
+            const label = path === home ? "~" : path.startsWith(`${home}/`) ? `~${path.slice(home.length)}` : path;
+            return join(theme, [
+              `${theme.fg("dim", ICON.directory)} ${label}${directory.workspace ? theme.fg("dim", ` [${directory.workspace}]`) : ""}`,
+              directory.revision ? theme.fg("dim", `${ICON.revision} ${sanitizeDisplayText(directory.revision)}`) : undefined,
+              directory.bookmark ? theme.fg("dim", `${ICON.branch} ${sanitizeDisplayText(directory.bookmark)}`) : undefined,
+            ]);
+          });
+          const groups = new Map<string, WorkPullRequest[]>();
+          for (const candidate of snapshot?.pullRequests ?? []) {
+            const pr = parsePullRequestUrl(candidate.url);
+            if (!pr) continue;
+            const group = groups.get(pr.repo) ?? [];
+            if (!group.some(item => item.number === pr.number)) group.push(pr);
+            groups.set(pr.repo, group);
+          }
+          const repoNames = [...groups.keys()].map(repo => repo.split("/")[1]);
+          const pullRequestSegments = [...groups].map(([repo, prs]) => {
+            const shortName = repo.split("/")[1];
+            const label = repoNames.filter(name => name === shortName).length > 1 ? repo : shortName;
+            const links = prs.map(pr => `\u001b]8;;${pr.url}\u001b\\#${pr.number}\u001b]8;;\u001b\\`).join(" ");
+            return `${theme.fg("dim", ICON.pullRequest)} ${label} ${links}`;
+          });
 
           const line1Left = join(theme, [
             `${theme.fg("dim", ICON.model)} ${theme.bold(model)}`,
@@ -580,12 +513,7 @@ export default (pi: ExtensionAPI) => {
               ? `${theme.fg("dim", ICON.effort)} ${thinking}`
               : undefined,
           ]);
-          const line1Right = join(theme, [
-            `${theme.fg("dim", ICON.directory)} ${directory}`,
-            location.revision
-              ? theme.fg("dim", `${ICON.revision} ${location.revision}`)
-              : undefined,
-          ]);
+          const line1Right = join(theme, directorySegments);
 
           const contextSegment =
             contextPercent !== undefined &&
@@ -607,14 +535,7 @@ export default (pi: ExtensionAPI) => {
             tokenSegment,
             costSegment,
           ]);
-          const line2Right = join(theme, [
-            location.bookmark
-              ? `${theme.fg("dim", ICON.branch)} ${location.bookmark}`
-              : undefined,
-            pullRequestLink
-              ? `${theme.fg("dim", ICON.pullRequest)} ${pullRequestLink}`
-              : undefined,
-          ]);
+          const line2Right = join(theme, pullRequestSegments);
 
           const lines = [
             align(line1Left, line1Right, width),
@@ -630,26 +551,42 @@ export default (pi: ExtensionAPI) => {
       };
     });
 
-    scheduleLocationRefresh(ctx.cwd, true);
+    alive = true;
+    unsubscribeSnapshot = pi.events.on(SNAPSHOT_EVENT, value => {
+      if (!alive || !currentCtx || !value || typeof value !== "object") return;
+      const next = value as WorkContextSnapshot;
+      if (next.version !== 1 || next.sessionId !== currentCtx.sessionManager.getSessionId() ||
+          !Array.isArray(next.directories) || !Array.isArray(next.pullRequests)) return;
+      if (!next.directories.every(directory => directory && typeof directory === "object" &&
+          typeof directory.path === "string" &&
+          (directory.revision === undefined || typeof directory.revision === "string") &&
+          (directory.bookmark === undefined || typeof directory.bookmark === "string") &&
+          (directory.workspace === undefined || directory.workspace === "jj-workspace" || directory.workspace === "git-worktree")) ||
+          !next.pullRequests.every(pr => pr && typeof pr === "object" && typeof pr.url === "string")) return;
+      snapshot = next;
+      requestRender?.();
+    });
+    unsubscribeAsyncComplete = pi.events.on("subagent:async-complete", () => {
+      if (alive && currentCtx) refreshChildCost(currentCtx);
+    });
+    requestSnapshot(ctx);
     void refreshCodexUsage(ctx);
     refreshChildCost(ctx);
   });
 
   pi.on("tool_execution_end", (event, ctx) => {
-    if (ctx.mode !== "tui") {
+    if (!alive || ctx.mode !== "tui") {
       return;
     }
-    scheduleLocationRefresh(ctx.cwd, false);
     if (event.toolName === "subagent" || event.toolName === "bg_wait") {
       refreshChildCost(ctx);
     }
   });
 
   pi.on("agent_settled", (_event, ctx) => {
-    if (ctx.mode !== "tui") {
+    if (!alive || ctx.mode !== "tui") {
       return;
     }
-    scheduleLocationRefresh(ctx.cwd, true);
     void refreshCodexUsage(ctx);
     refreshChildCost(ctx);
   });
@@ -673,25 +610,19 @@ export default (pi: ExtensionAPI) => {
     requestRender?.();
   });
 
-  const unsubscribeAsyncComplete = pi.events.on(
-    "subagent:async-complete",
-    () => {
-      if (alive && currentCtx) {
-        refreshChildCost(currentCtx);
-      }
-    },
-  );
+  pi.on("session_tree", (_event, ctx) => {
+    if (!alive || ctx.mode !== "tui") return;
+    currentCtx = ctx;
+    snapshot = undefined;
+    requestSnapshot(ctx);
+    requestRender?.();
+  });
 
   pi.on("session_shutdown", () => {
     alive = false;
     currentCtx = undefined;
-    childCostRequestVersion += 1;
-    clearChildCostRequest();
-    unsubscribeAsyncComplete();
-    if (refreshTimer) {
-      clearTimeout(refreshTimer);
-    }
-    refreshTimer = undefined;
+    clearSubscriptions();
+    snapshot = undefined;
     requestRender = undefined;
   });
 };
