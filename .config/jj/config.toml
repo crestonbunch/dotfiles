@@ -60,7 +60,7 @@ auto-track-bookmarks = "glob:creston/*"
 auto-track-created-bookmarks = "glob:creston/*"
 
 [revsets]
-log = "present(@) | ancestors((mine() ~ ::trunk()) | @, 2) | present(trunk())"
+log = "present(@) | ancestors((mine() ~ ::trunk()) | @, 2) | present(trunk()) | @::"
 
 [revset-aliases]
 "stack()" = "trunk()..@"
