@@ -9,6 +9,7 @@ alwaysApply: true
 - Keep related task changes in one cohesive revision. Commit completed steps with a descriptive message; leave only the fresh empty working-copy revision undescribed. Never commit an empty revision or unrelated changes.
 - **Owned** means assigned to this task, not merely current/unpublished. Rewrite only owned, unpublished history after checking descendants and workspace ownership. Ask before changing shared/published history, discarding user work, or force-pushing; ask if ownership is unclear.
 - Git-only: do not commit unless requested. Bookmarks and PR creation require permission. For read-only jj review, `--ignore-working-copy` avoids snapshotting concurrent work.
+- Before creating or moving a bookmark, run `jj pre-commit` and require it to succeed before changing the bookmark.
 
 ## Workspaces
 
