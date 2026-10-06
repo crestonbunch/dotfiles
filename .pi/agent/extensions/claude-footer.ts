@@ -28,7 +28,7 @@ const ICON = {
   plus: "",
   pullRequest: "",
   reset: "",
-  revision: "⬡",
+  jjWorkspace: "⬡",
   session: "",
   week: "",
 } as const;
@@ -482,13 +482,14 @@ export default (pi: ExtensionAPI) => {
             ? snapshot.directories
             : [{ path: currentCtx?.cwd ?? ctx.cwd }];
           const home = homedir();
+          const hasPullRequests = snapshot?.pullRequests.some(pr => parsePullRequestUrl(pr.url) !== undefined) ?? false;
           const directorySegments = directories.map(directory => {
             const path = sanitizeDisplayText(directory.path);
             const label = path === home ? "~" : path.startsWith(`${home}/`) ? `~${path.slice(home.length)}` : path;
+            const icon = directory.workspace === "jj-workspace" ? ICON.jjWorkspace : ICON.directory;
             return join(theme, [
-              `${theme.fg("dim", ICON.directory)} ${label}${directory.workspace ? theme.fg("dim", ` [${directory.workspace}]`) : ""}`,
-              directory.revision ? theme.fg("dim", `${ICON.revision} ${sanitizeDisplayText(directory.revision)}`) : undefined,
-              directory.bookmark ? theme.fg("dim", `${ICON.branch} ${sanitizeDisplayText(directory.bookmark)}`) : undefined,
+              `${theme.fg("dim", icon)} ${label}`,
+              !hasPullRequests && directory.bookmark ? theme.fg("dim", `${ICON.branch} ${sanitizeDisplayText(directory.bookmark)}`) : undefined,
             ]);
           });
           const groups = new Map<string, WorkPullRequest[]>();

@@ -211,14 +211,28 @@ const snapshot = {
   ],
 };
 
-test("renders multiple annotated paths and grouped repository PR links", t => {
+test("renders compact workspace paths and grouped repository PR links", t => {
   const footer = setUp(t, { snapshot });
   footer.startSession("session-1");
   const output = footer.render(500);
-  assert.match(output, /~\/projects\/alpha \[jj-workspace\].*abcdefgh.*feature-a/);
-  assert.match(output, /\/other\/projects\/alpha \[git-worktree\].*feature-b/);
+  assert.match(output, /⬡ ~\/projects\/alpha/);
+  assert.match(output, / \/other\/projects\/alpha/);
+  assert.doesNotMatch(output, /jj-workspace|git-worktree|abcdefgh|feature-a|feature-b/);
   assert.match(output, /alpha \x1b\]8;;https:\/\/github.com\/owner\/alpha\/pull\/12\x1b\\#12\x1b\]8;;\x1b\\ \x1b\]8;;https:\/\/github.com\/owner\/alpha\/pull\/13/);
   assert.match(output, /beta .*#4/);
+});
+
+test("restores bookmarks when PRs are cleared from context", t => {
+  const footer = setUp(t, { snapshot });
+  footer.startSession("session-1");
+  assert.doesNotMatch(footer.render(500), /feature-a|feature-b/);
+
+  footer.events.emit(SNAPSHOT_EVENT, { ...snapshot, sessionId: "session-1", pullRequests: [] });
+
+  const output = footer.render(500);
+  assert.match(output, /⬡ ~\/projects\/alpha ·  feature-a/);
+  assert.match(output, / \/other\/projects\/alpha ·  feature-b/);
+  assert.doesNotMatch(output, /#12|#13|#4/);
 });
 
 test("uses owner identity when repository short names are ambiguous", t => {
@@ -233,7 +247,7 @@ test("uses owner identity when repository short names are ambiguous", t => {
 test("falls back to fresh cwd without a provider and ignores wrong sessions", t => {
   const footer = setUp(t);
   footer.startSession("session-1", "/first/project");
-  assert.match(footer.render(), /\/first\/project/);
+  assert.match(footer.render(), / \/first\/project/);
   footer.events.emit(SNAPSHOT_EVENT, { ...snapshot, sessionId: "other" });
   assert.doesNotMatch(footer.render(500), /feature-a|#12/);
   footer.startSession("session-2", "/second/project");
@@ -245,7 +259,7 @@ test("accepts a provider loaded after the footer and requests on tree navigation
   const footer = setUp(t);
   const ctx = footer.startSession("session-1");
   footer.events.emit(SNAPSHOT_EVENT, { ...snapshot, sessionId: "session-1" });
-  assert.match(footer.render(500), /feature-a/);
+  assert.match(footer.render(500), /#12/);
   footer.events.on(REQUEST_EVENT, request => footer.events.emit(SNAPSHOT_EVENT, {
     version: 1, sessionId: request.sessionId, directories: [{ path: "/tree/branch" }], pullRequests: [],
   }));
@@ -291,7 +305,7 @@ test("requests a matching snapshot after replacing a disposed session footer", t
   const footer = setUp(t, { snapshot });
   footer.startSession("session-1");
   footer.startSession("session-2");
-  assert.match(footer.render(500), /feature-a/);
+  assert.match(footer.render(500), /#12/);
   assert.equal(footer.events.listenerCount(SNAPSHOT_EVENT), 1);
 });
 
