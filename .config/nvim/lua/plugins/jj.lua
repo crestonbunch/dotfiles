@@ -3,10 +3,19 @@ return {
   version = "*",
   dependencies = { "dlyongemallo/diffview-plus.nvim" },
   keys = {
-    { "<leader>jl", "<cmd>J log<cr>", desc = "Jujutsu log" },
+    { "<leader>j", "<cmd>J log<cr>", desc = "Jujutsu log" },
   },
   config = function()
-    require("jj").setup({ diff = { backend = "diffview-plus" } })
+    require("jj").setup({
+      terminal = {
+        window = {
+          type = "floating",
+          floating_width = 0.95,
+          floating_height = 0.85,
+        },
+      },
+      diff = { backend = "diffview-plus" },
+    })
     local diff = require("jj.diff")
     diff.register_backend("diffview-plus", {
       diff_current = function(opts)
