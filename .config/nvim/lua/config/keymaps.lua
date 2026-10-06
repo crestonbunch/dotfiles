@@ -23,7 +23,7 @@ vim.keymap.set("v", "<leader>sa", ":sort<CR>", { desc = "Sort selection" })
 vim.keymap.set("n", "<Esc>", "<cmd>nohlsearch<CR><Esc>", { desc = "Clear search highlighting" })
 vim.keymap.set("n", "<leader>h", "<cmd>nohlsearch<CR>", { desc = "Clear search highlighting" })
 
--- Git
+-- Jujutsu
 -- Resolve a jj revset to a commit hash. Uses commit_id rather than a bookmark
 -- name so it works even when the matched commit has only a remote bookmark
 -- (e.g. master@origin with no local master).
@@ -36,16 +36,15 @@ local function jj_revset_commit(revset)
 	return vim.trim(out):match("^%x+")
 end
 
--- Symmetric diff (...) against nearest ancestor with any bookmark — the parent
--- in a stacked workflow, falling through to trunk since trunk normally has a
--- bookmark too.
+-- Symmetric diff (...) against the nearest bookmarked ancestor, falling back
+-- to trunk's bookmark in a stacked workflow. The jj adapter keeps @ live.
 vim.keymap.set("n", "<leader>gb", function()
 	local hash = jj_revset_commit("heads(::@- & (bookmarks() | remote_bookmarks()))")
 	if not hash then
 		vim.notify("No ancestor bookmark found", vim.log.levels.WARN)
 		return
 	end
-	vim.cmd("DiffviewOpen " .. hash .. "...HEAD --imply-local")
+	vim.cmd("DiffviewOpen " .. hash .. "...@")
 end, { desc = "Diffview vs ancestor branch" })
 
 -- Symmetric diff (...) against trunk.
@@ -55,5 +54,5 @@ vim.keymap.set("n", "<leader>gt", function()
 		vim.notify("No trunk found", vim.log.levels.WARN)
 		return
 	end
-	vim.cmd("DiffviewOpen " .. hash .. "...HEAD --imply-local")
+	vim.cmd("DiffviewOpen " .. hash .. "...@")
 end, { desc = "Diffview vs trunk" })

@@ -1,5 +1,5 @@
 return {
-	"sindrets/diffview.nvim",
+	"dlyongemallo/diffview-plus.nvim",
 	dependencies = {
 		"nvim-lua/plenary.nvim",
 	},
@@ -19,6 +19,7 @@ return {
 	},
 	config = function()
 		require("diffview").setup({
+			preferred_adapter = "jj",
 			enhanced_diff_hl = true,
 			view = {
 				default = {
