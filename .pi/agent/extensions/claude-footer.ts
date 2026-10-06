@@ -4,6 +4,7 @@ import { homedir } from "node:os";
 import {
   REQUEST_EVENT,
   SNAPSHOT_EVENT,
+  parseGithubRepositoryUrl,
   parsePullRequestUrl,
   sanitizeDisplayText,
   type WorkContextSnapshot,
@@ -492,20 +493,29 @@ export default (pi: ExtensionAPI) => {
               !hasPullRequests && directory.bookmark ? theme.fg("dim", `${ICON.branch} ${sanitizeDisplayText(directory.bookmark)}`) : undefined,
             ]);
           });
-          const groups = new Map<string, WorkPullRequest[]>();
+          const groups = new Map<string, { url: string; prs: WorkPullRequest[] }>();
+          for (const directory of directories) {
+            for (const url of directory.githubUrls ?? []) {
+              const repo = url.slice("https://github.com/".length);
+              if (!groups.has(repo)) {
+                groups.set(repo, { url, prs: [] });
+              }
+            }
+          }
           for (const candidate of snapshot?.pullRequests ?? []) {
             const pr = parsePullRequestUrl(candidate.url);
             if (!pr) continue;
-            const group = groups.get(pr.repo) ?? [];
-            if (!group.some(item => item.number === pr.number)) group.push(pr);
+            const group = groups.get(pr.repo) ?? { url: `https://github.com/${pr.repo}`, prs: [] };
+            if (!group.prs.some(item => item.number === pr.number)) group.prs.push(pr);
             groups.set(pr.repo, group);
           }
           const repoNames = [...groups.keys()].map(repo => repo.split("/")[1]);
-          const pullRequestSegments = [...groups].map(([repo, prs]) => {
+          const repositorySegments = [...groups].map(([repo, { url, prs }]) => {
             const shortName = repo.split("/")[1];
             const label = repoNames.filter(name => name === shortName).length > 1 ? repo : shortName;
+            const repositoryLink = `\u001b]8;;${url}\u001b\\${label}\u001b]8;;\u001b\\`;
             const links = prs.map(pr => `\u001b]8;;${pr.url}\u001b\\#${pr.number}\u001b]8;;\u001b\\`).join(" ");
-            return `${theme.fg("dim", ICON.pullRequest)} ${label} ${links}`;
+            return `${theme.fg("dim", ICON.pullRequest)} ${repositoryLink}${links ? ` ${links}` : ""}`;
           });
 
           const line1Left = join(theme, [
@@ -536,7 +546,7 @@ export default (pi: ExtensionAPI) => {
             tokenSegment,
             costSegment,
           ]);
-          const line2Right = join(theme, pullRequestSegments);
+          const line2Right = join(theme, repositorySegments);
 
           const lines = [
             align(line1Left, line1Right, width),
@@ -564,7 +574,20 @@ export default (pi: ExtensionAPI) => {
           (directory.bookmark === undefined || typeof directory.bookmark === "string") &&
           (directory.workspace === undefined || directory.workspace === "jj-workspace" || directory.workspace === "git-worktree")) ||
           !next.pullRequests.every(pr => pr && typeof pr === "object" && typeof pr.url === "string")) return;
-      snapshot = next;
+      // Optional local enrichment must not invalidate otherwise useful context.
+      snapshot = {
+        ...next,
+        directories: next.directories.map(directory => {
+          const { githubUrls, ...metadata } = directory;
+          const urls = Array.isArray(githubUrls)
+            ? [...new Set(githubUrls.slice(0, 16).flatMap(value => {
+                const repository = typeof value === "string" ? parseGithubRepositoryUrl(value) : undefined;
+                return repository ? [repository.url] : [];
+              }))]
+            : [];
+          return urls.length ? { ...metadata, githubUrls: urls } : metadata;
+        }),
+      };
       requestRender?.();
     });
     unsubscribeAsyncComplete = pi.events.on("subagent:async-complete", () => {

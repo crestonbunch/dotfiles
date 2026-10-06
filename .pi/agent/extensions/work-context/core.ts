@@ -13,6 +13,7 @@ export type WorkDirectory = {
   workspace?: "jj-workspace" | "git-worktree";
   revision?: string;
   bookmark?: string;
+  githubUrls?: string[];
 };
 export type WorkPullRequest = { url: string; repo: string; number: number };
 export type WorkContextSnapshot = {
@@ -27,6 +28,18 @@ export type SelectionUpdate = { directories?: string[]; prs?: string[] };
 const controls = /[\u0000-\u001f\u007f-\u009f]/;
 export const sanitizeDisplayText = (text: string): string =>
   text.replace(/[\u0000-\u001f\u007f-\u009f]/g, "").trim();
+
+/** Local clone URLs become credential-free canonical repository hyperlinks. */
+export const parseGithubRepositoryUrl = (input: string): { url: string; repo: string } | undefined => {
+  if (typeof input !== "string" || input.length > 1024 || controls.test(input)) return undefined;
+  const match = /^(?:https:\/\/github\.com\/|git@github\.com:|ssh:\/\/git@github\.com(?::22)?\/)([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)\/?$/i.exec(input);
+  if (!match) return undefined;
+  const owner = match[1];
+  const name = match[2].replace(/\.git$/i, "");
+  if (!name || [owner, name].some(part => part === "." || part === "..")) return undefined;
+  const repo = `${owner}/${name}`.toLowerCase();
+  return { url: `https://github.com/${repo}`, repo };
+};
 
 /** Only canonical GitHub PR URLs can become terminal hyperlinks. */
 export const parsePullRequestUrl = (input: string): WorkPullRequest | undefined => {

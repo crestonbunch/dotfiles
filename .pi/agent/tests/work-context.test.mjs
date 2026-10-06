@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { EventEmitter } from "node:events";
 import { mkdtempSync, mkdirSync, realpathSync, rmSync, symlinkSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -13,7 +14,7 @@ const hostRoot = join(dirname(realpathSync("/opt/homebrew/bin/pi")), "..", "libe
 const hostRequire = createRequire(join(hostRoot, "package.json"));
 const jiti = createJiti(import.meta.url, { alias: { typebox: hostRequire.resolve("typebox") } });
 const workContext = await jiti.import("../extensions/work-context/index.ts", { default: true });
-const { SNAPSHOT_EVENT, REQUEST_EVENT, SELECTION_ENTRY } = await jiti.import("../extensions/work-context/core.ts");
+const { SNAPSHOT_EVENT, REQUEST_EVENT, SELECTION_ENTRY, parseGithubRepositoryUrl } = await jiti.import("../extensions/work-context/core.ts");
 const { DefaultResourceLoader, ExtensionRunner, SessionManager, SettingsManager } = await import(pathToFileURL(join(hostRoot, "dist/index.js")));
 const { createCodemodeToolDefinition } = await import(pathToFileURL(join(hostRoot, "dist/extensions/codemode/tool.js")));
 
@@ -555,4 +556,135 @@ test("installed Pi loads the tool and renders stable instructions in forced prom
   assert.equal(second.systemPromptOptions.forceSystemPrompt, first.systemPromptOptions.forceSystemPrompt);
   assert.ok(second.systemPromptOptions.forceSystemPrompt.startsWith(boundary));
   assert.ok(second.systemPromptOptions.forceSystemPrompt.includes("Piggyback tools.work_context({...}) into existing codemode scripts"));
+});
+
+test("repository parser canonicalizes HTTPS and SSH clone spellings", () => {
+  const expected = { url: "https://github.com/owner/repo", repo: "owner/repo" };
+  assert.deepEqual(parseGithubRepositoryUrl("https://github.com/Owner/Repo.git/"), expected);
+  assert.deepEqual(parseGithubRepositoryUrl("https://github.com/owner/repo"), expected);
+  assert.deepEqual(parseGithubRepositoryUrl("git@github.com:Owner/Repo.git"), expected);
+  assert.deepEqual(parseGithubRepositoryUrl("ssh://git@github.com/Owner/Repo.git"), expected);
+  assert.deepEqual(parseGithubRepositoryUrl("ssh://git@github.com:22/Owner/Repo.git"), expected);
+});
+
+test("repository parser rejects secrets, unsafe paths and terminal controls", () => {
+  assert.equal(parseGithubRepositoryUrl("https://token@github.com/owner/repo"), undefined);
+  assert.equal(parseGithubRepositoryUrl("https://github.com.evil.test/owner/repo"), undefined);
+  assert.equal(parseGithubRepositoryUrl("http://github.com/owner/repo"), undefined);
+  assert.equal(parseGithubRepositoryUrl("https://github.com/owner/repo?token=private"), undefined);
+  assert.equal(parseGithubRepositoryUrl("https://github.com/owner/repo#fragment"), undefined);
+  assert.equal(parseGithubRepositoryUrl("https://github.com/../repo"), undefined);
+  assert.equal(parseGithubRepositoryUrl("https://github.com/owner/...git"), undefined);
+  assert.equal(parseGithubRepositoryUrl("https://github.com/owner/%2e%2e"), undefined);
+  assert.equal(parseGithubRepositoryUrl("https://github.com/owner/repo/pull/1"), undefined);
+  assert.equal(parseGithubRepositoryUrl("ssh://user:private@github.com/owner/repo"), undefined);
+  assert.equal(parseGithubRepositoryUrl("git@github.com:owner/repo\u001b"), undefined);
+  assert.equal(parseGithubRepositoryUrl(`https://github.com/owner/${"x".repeat(1024)}`), undefined);
+  assert.equal(parseGithubRepositoryUrl(null), undefined);
+});
+
+test("jj directories enrich snapshots from all local remotes without persisting enrichment", async t => {
+  const local = repoExec();
+  const f = setUp(t, { exec: (command, args, options) => {
+    if (command === "jj" && args.includes("remote")) return ok(options.cwd === "/one"
+      ? "origin https://github.com/Owner/Repo.git\nupstream git@github.com:owner/repo.git\nfork ssh://git@github.com/Other/Repo.git\n"
+      : "origin https://github.com/owner/repo\n");
+    return local(command, args);
+  } });
+  f.start();
+  await f.update({ directories: ["/one", "/two"], prs: ["https://github.com/owner/repo/pull/2"] });
+  await f.flush();
+  assert.deepEqual(f.snapshot().directories[0].githubUrls, ["https://github.com/owner/repo", "https://github.com/other/repo"]);
+  assert.deepEqual(f.snapshot().directories[1].githubUrls, ["https://github.com/owner/repo"]);
+  assert.deepEqual(f.snapshot().pullRequests, [pr("owner/repo", 2)]);
+  assert.deepEqual(f.persisted[0].data, { version: 1, directories: ["/one", "/two"], prs: ["https://github.com/owner/repo/pull/2"] });
+  assert.equal(f.persisted.length, 1);
+  assert.deepEqual(f.calls.find(call => call.args.includes("remote")).args, ["--ignore-working-copy", "--no-pager", "git", "remote", "list"]);
+  assert.equal(f.calls.filter(call => call.command === "git").length, 0, "recognized jj workspaces use jj local metadata");
+});
+
+test("git-only directories deduplicate fetch, push and named remote spellings", async t => {
+  const f = setUp(t, { exec: async (command, args) => {
+    if (command !== "git") return absent;
+    if (args[0] === "branch") return ok("feature\n");
+    if (args[0] === "rev-parse") return ok("/repo/.git\n/repo/.git\n");
+    if (args[0] === "remote") return ok("origin\thttps://github.com/Owner/Repo.git (fetch)\norigin\tgit@github.com:owner/repo.git (push)\nupstream\tssh://git@github.com/Other/Repo.git (fetch)\n");
+    return absent;
+  } });
+  f.start();
+  await f.flush();
+  assert.deepEqual(f.snapshot().directories, [{ path: "/work/repo", bookmark: "feature", workspace: undefined, githubUrls: ["https://github.com/owner/repo", "https://github.com/other/repo"] }]);
+  assert.deepEqual(f.calls.find(call => call.command === "git" && call.args[0] === "remote").args, ["remote", "-v"]);
+});
+
+test("unsupported and unsafe local remotes do not enter display snapshots", async t => {
+  const local = repoExec();
+  const f = setUp(t, { exec: (command, args) => command === "jj" && args.includes("remote")
+    ? ok("origin https://gitlab.com/owner/repo.git\nsecret https://private@github.com/owner/repo.git\nquery https://github.com/owner/repo?private=1\nunsafe git@github.com:owner/repo\u001b\n")
+    : local(command, args) });
+  f.start();
+  await f.flush();
+  assert.equal(Object.hasOwn(f.snapshot().directories[0], "githubUrls"), false);
+});
+
+test("transient local remote failures retain URLs and successful removal clears them", async t => {
+  let remotes = ok("origin git@github.com:owner/repo.git\n");
+  const local = repoExec();
+  const f = setUp(t, { exec: (command, args) => command === "jj" && args.includes("remote") ? remotes : local(command, args) });
+  f.start();
+  await f.flush();
+  remotes = absent;
+  f.emit("agent_settled");
+  await f.flush();
+  assert.deepEqual(f.snapshot().directories[0].githubUrls, ["https://github.com/owner/repo"]);
+  remotes = ok("");
+  f.emit("agent_settled");
+  await f.flush();
+  assert.equal(Object.hasOwn(f.snapshot().directories[0], "githubUrls"), false);
+  assert.equal(f.snapshot().directories[0].bookmark, "feature");
+});
+
+test("local remote discovery bounds repository count and oversized command output", async t => {
+  let remotes = ok(Array.from({ length: 20 }, (_, i) => `remote${i} https://github.com/owner/repo${i}.git`).join("\n"));
+  const local = repoExec();
+  const f = setUp(t, { exec: (command, args) => command === "jj" && args.includes("remote") ? remotes : local(command, args) });
+  f.start();
+  await f.flush();
+  assert.equal(f.snapshot().directories[0].githubUrls.length, 16);
+  assert.equal(f.snapshot().directories[0].githubUrls.at(-1), "https://github.com/owner/repo15");
+  remotes = ok("x".repeat(64_001));
+  f.emit("agent_settled");
+  await f.flush();
+  assert.equal(f.snapshot().directories[0].githubUrls.length, 16);
+});
+
+test("provider reads real git-only local remotes without contacting GitHub", async t => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "pi-work-context-git-")));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  assert.equal(spawnSync("git", ["init", root], { encoding: "utf8" }).status, 0);
+  assert.equal(spawnSync("git", ["remote", "add", "origin", "git@github.com:Owner/Repo.git"], { cwd: root, encoding: "utf8" }).status, 0);
+  const f = setUp(t, { cwd: root, exec: async (command, args, options) => {
+    if (command === "jj") return absent;
+    const result = spawnSync(command, args, { cwd: options.cwd, encoding: "utf8", timeout: options.timeout });
+    return { code: result.status, killed: !!result.error, stdout: result.stdout ?? "", stderr: "" };
+  } });
+  f.start();
+  await f.flush();
+  assert.deepEqual(f.snapshot().directories[0].githubUrls, ["https://github.com/owner/repo"]);
+});
+
+test("provider reads real non-colocated jj local remotes without a git checkout", async t => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "pi-work-context-jj-")));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  assert.equal(spawnSync("jj", ["git", "init", "--no-colocate", root], { encoding: "utf8" }).status, 0);
+  assert.equal(spawnSync("jj", ["git", "remote", "add", "origin", "ssh://git@github.com/Owner/Repo.git"], { cwd: root, encoding: "utf8" }).status, 0);
+  const f = setUp(t, { cwd: root, exec: async (command, args, options) => {
+    const result = spawnSync(command, args, { cwd: options.cwd, encoding: "utf8", timeout: options.timeout });
+    return { code: result.status, killed: !!result.error, stdout: result.stdout ?? "", stderr: "" };
+  } });
+  f.start();
+  await f.flush();
+  assert.deepEqual(f.snapshot().directories[0].githubUrls, ["https://github.com/owner/repo"]);
+  assert.equal(f.snapshot().directories[0].workspace, "jj-workspace");
+  assert.equal(f.calls.filter(call => call.command === "git").length, 0);
 });

@@ -218,8 +218,8 @@ test("renders compact workspace paths and grouped repository PR links", t => {
   assert.match(output, /⬡ ~\/projects\/alpha/);
   assert.match(output, / \/other\/projects\/alpha/);
   assert.doesNotMatch(output, /jj-workspace|git-worktree|abcdefgh|feature-a|feature-b/);
-  assert.match(output, /alpha \x1b\]8;;https:\/\/github.com\/owner\/alpha\/pull\/12\x1b\\#12\x1b\]8;;\x1b\\ \x1b\]8;;https:\/\/github.com\/owner\/alpha\/pull\/13/);
-  assert.match(output, /beta .*#4/);
+  assert.ok(output.includes("\x1b]8;;https://github.com/owner/alpha\x1b\\alpha\x1b]8;;\x1b\\ \x1b]8;;https://github.com/owner/alpha/pull/12\x1b\\#12\x1b]8;;\x1b\\ \x1b]8;;https://github.com/owner/alpha/pull/13"));
+  assert.ok(output.includes("\x1b]8;;https://github.com/owner/beta\x1b\\beta\x1b]8;;\x1b\\ \x1b]8;;https://github.com/owner/beta/pull/4\x1b\\#4"));
 });
 
 test("restores bookmarks when PRs are cleared from context", t => {
@@ -241,7 +241,10 @@ test("uses owner identity when repository short names are ambiguous", t => {
     { repo: "other/alpha", number: 2, url: "https://github.com/other/alpha/pull/2" },
   ] } });
   footer.startSession("session-1");
-  assert.match(footer.render(500), /owner\/alpha .*#12.*other\/alpha .*#2/);
+  const output = footer.render(500);
+  assert.ok(output.includes("\x1b]8;;https://github.com/owner/alpha\x1b\\owner/alpha\x1b]8;;\x1b\\"));
+  assert.ok(output.includes("\x1b]8;;https://github.com/other/alpha\x1b\\other/alpha\x1b]8;;\x1b\\"));
+  assert.match(output, /#12.*#2/);
 });
 
 test("falls back to fresh cwd without a provider and ignores wrong sessions", t => {
@@ -343,4 +346,106 @@ test("does not restart cost subscriptions after footer disposal", t => {
   footer.handlers.get("tool_execution_end")({ toolName: "subagent" }, ctx);
   footer.handlers.get("agent_settled")({}, ctx);
   assert.equal(requests, 0);
+});
+
+test("links local repositories without PRs and retains bookmarks", t => {
+  const footer = setUp(t, { snapshot: {
+    version: 1,
+    directories: [{ path: "/local/alpha", workspace: "jj-workspace", bookmark: "feature-a", githubUrls: ["https://github.com/Owner/Alpha.git/"] }],
+    pullRequests: [],
+  } });
+  footer.startSession("session-1");
+
+  const output = footer.render(500);
+  assert.match(output, /⬡ \/local\/alpha ·  feature-a/);
+  assert.ok(output.includes(" \x1b]8;;https://github.com/owner/alpha\x1b\\alpha\x1b]8;;\x1b\\"));
+  assert.doesNotMatch(output, /#|Owner|\.git/);
+});
+
+test("deduplicates repository identities across directories and explicit PRs", t => {
+  const footer = setUp(t, { snapshot: {
+    version: 1,
+    directories: [
+      { path: "/first", bookmark: "first-branch", githubUrls: ["git@github.com:Owner/Alpha.git", "https://github.com/owner/alpha/"] },
+      { path: "/second", bookmark: "second-branch", githubUrls: ["ssh://git@github.com/OWNER/ALPHA.git"] },
+    ],
+    pullRequests: [
+      { url: "https://github.com/OWNER/Alpha/pull/12" },
+      { url: "https://github.com/owner/alpha/pull/12" },
+      { url: "https://github.com/owner/alpha/pull/13" },
+    ],
+  } });
+  footer.startSession("session-1");
+
+  const output = footer.render(500);
+  assert.equal(output.match(//g)?.length, 1);
+  assert.equal(output.match(/#12/g)?.length, 1);
+  assert.equal(output.match(/#13/g)?.length, 1);
+  assert.ok(output.includes("\x1b]8;;https://github.com/owner/alpha\x1b\\alpha\x1b]8;;\x1b\\"));
+  assert.doesNotMatch(output, /first-branch|second-branch/);
+});
+
+test("disambiguates short names across local and PR repositories", t => {
+  const footer = setUp(t, { snapshot: {
+    version: 1,
+    directories: [{ path: "/local", githubUrls: ["https://github.com/owner/alpha", "https://github.com/owner/beta"] }],
+    pullRequests: [{ url: "https://github.com/other/alpha/pull/2" }],
+  } });
+  footer.startSession("session-1");
+
+  const output = footer.render(500);
+  assert.ok(output.includes("\x1b]8;;https://github.com/owner/alpha\x1b\\owner/alpha\x1b]8;;\x1b\\"));
+  assert.ok(output.includes("\x1b]8;;https://github.com/other/alpha\x1b\\other/alpha\x1b]8;;\x1b\\"));
+  assert.ok(output.includes("\x1b]8;;https://github.com/owner/beta\x1b\\beta\x1b]8;;\x1b\\"));
+});
+
+test("ignores malformed optional repository metadata without losing directory context", t => {
+  const footer = setUp(t, { snapshot: {
+    version: 1,
+    directories: [
+      { path: "/string", githubUrls: "https://github.com/owner/string" },
+      { path: "/object", githubUrls: { url: "https://github.com/owner/object" } },
+      { path: "/null", githubUrls: null },
+      { path: "/array", bookmark: "local-branch", githubUrls: [null, 42, {}, "https://example.com/owner/repo", "https://github.com/owner/unsafe\x1b]8;;evil", "https://user:password@github.com/owner/private", "https://github.com/owner/safe"] },
+    ],
+    pullRequests: [{ url: "https://example.com/owner/repo/pull/1" }],
+  } });
+  footer.startSession("session-1");
+
+  const output = footer.render(500);
+  assert.match(output, /\/string.*\/object.*\/null.*\/array ·  local-branch/);
+  assert.equal(output.match(//g)?.length, 1);
+  assert.ok(output.includes("\x1b]8;;https://github.com/owner/safe\x1b\\safe\x1b]8;;\x1b\\"));
+  assert.doesNotMatch(output, /example\.com|evil|password|private|unsafe|#1/);
+});
+
+test("clears repository labels when optional enrichment is removed", t => {
+  const footer = setUp(t, { snapshot: {
+    version: 1,
+    directories: [{ path: "/local", githubUrls: ["https://github.com/owner/alpha"] }],
+    pullRequests: [],
+  } });
+  footer.startSession("session-1");
+  assert.match(footer.render(500), //);
+
+  footer.events.emit(SNAPSHOT_EVENT, {
+    version: 1, sessionId: "session-1", directories: [{ path: "/local", githubUrls: [] }], pullRequests: [],
+  });
+
+  assert.match(footer.render(500), /\/local/);
+  assert.doesNotMatch(footer.render(500), /|alpha|\x1b/);
+});
+
+test("keeps repository-only hyperlinks within narrow terminal columns", t => {
+  const footer = setUp(t, { snapshot: {
+    version: 1,
+    directories: [{ path: "/工作/项目", bookmark: "feature", githubUrls: ["https://github.com/owner/long-repository-name", "https://github.com/other/long-repository-name"] }],
+    pullRequests: [],
+  } });
+  footer.startSession("session-1");
+  for (const width of [0, 1, 10, 24, 40, 80, 120]) {
+    for (const line of footer.render(width).split("\n")) {
+      assert.ok(visibleWidth(line) <= width, `line exceeds ${width} columns: ${visibleWidth(line)}`);
+    }
+  }
 });
