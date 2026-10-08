@@ -68,7 +68,7 @@ log = "present(@) | ancestors((mine() ~ ::trunk()) | @, 2) | present(trunk()) | 
 [ai]
 backend = "pi"
 claude-model = "sonnet"
-pi-model = "openai-codex/gpt-5.6-terra"
+pi-model = "openai-codex/gpt-6-luna:high"
 
 [aliases]
 # lob: like `jj log` but restricted to bookmarked revisions. Non-bookmarked

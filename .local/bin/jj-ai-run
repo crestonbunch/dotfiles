@@ -20,7 +20,7 @@ esac
 case "$backend" in
   pi)
     configured_model="$(jj config get ai.pi-model 2> /dev/null || true)"
-    model="${model:-${configured_model:-openai-codex/gpt-5.6-terra}}"
+    model="${model:-${configured_model:-openai-codex/gpt-6-luna:high}}"
     printf '==> Drafting with Pi (%s)...\n' "$model" >&2
     args=(
       --model "$model"
