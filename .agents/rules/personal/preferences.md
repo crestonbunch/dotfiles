@@ -19,6 +19,11 @@ Provider: `openai-codex`. Defaults, not fixed limits:
 | `worker` | `gpt-6.1-sol` | medium | Mechanical edits, existing features, plumbing, debugging |
 | `builder` | `gpt-6.1-sol` | high | Larger new features and novel technical designs |
 | `reviewer` | `gpt-6-luna` | high | Fresh read-only review of the final candidate; use Sol if deeper review is needed |
+| `interfaces-reviewer` | `gpt-6-luna` | high | Optional Ousterhout-style review of API depth, information hiding, module coherence, and composition |
+| `aesthetics-reviewer` | `gpt-6-luna` | high | Optional Taste for Makers review of code beauty, directness, nesting, branching, and organization |
+| `practices-reviewer` | `gpt-6-luna` | high | Optional review of immutable values, plain data, functional core/imperative shell, and decision placement |
+
+The parent may select these design specialists at its discretion, mainly for substantial chunks of new work. Usually skip them for small changes and updates to existing features. Choose only the lens that addresses a concrete design uncertainty; do not launch all three by default or add mandatory review stages. Their recommendations are advisory, not correctness verification or acceptance gates, and do not replace focused behavioral review when needed. The parent reconciles overlapping advice by total complexity and caller burden, not line count or paradigm purity.
 
 Verify agents, models, tools, and project overrides before launch. Children return out-of-scope questions to the parent; no silent fallback or scope expansion.
 
