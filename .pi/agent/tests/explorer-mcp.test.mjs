@@ -73,7 +73,7 @@ const runtimeExplorer = async (t, tools) => {
   const explorer = agents.find(agent => agent.name === "explorer" && agent.filePath === join(root, ".agents", "explorer.md"));
   assert.ok(explorer, JSON.stringify(agentDiagnostics));
   assert.equal(explorer.tools, undefined, "explorer must not strictly filter dynamic MCP tools");
-  assert.deepEqual(explorer.excludeTools, ["bash", "powershell", "edit", "write", "subagent"]);
+  assert.deepEqual(explorer.excludeTools, ["edit", "write", "subagent"]);
   const settingsManager = SettingsManager.inMemory();
   let api;
   const loader = new DefaultResourceLoader({
@@ -139,13 +139,12 @@ test("explorer exclusions retain dynamically registered MCP tools discoverable a
   assert.ok(session.getActiveToolNames().includes("grep"));
   assert.ok(session.getActiveToolNames().includes("find"));
   assert.ok(session.getActiveToolNames().includes("ls"));
+  assert.ok(session.getActiveToolNames().includes("bash"));
   assert.ok(session.getActiveToolNames().includes("codemode"));
   assert.ok(session.getCallableToolNames().includes("web_search"));
   assert.ok(session.getCallableToolNames().includes("fetch_content"));
   assert.ok(session.getCallableToolNames().includes("get_search_content"));
   assert.ok(session.getCallableToolNames().includes("source_check"));
-  assert.equal(session.getToolDefinition("bash"), undefined);
-  assert.equal(session.getToolDefinition("powershell"), undefined);
   assert.equal(session.getToolDefinition("edit"), undefined);
   assert.equal(session.getToolDefinition("write"), undefined);
   assert.equal(session.getToolDefinition("subagent"), undefined);
@@ -164,6 +163,24 @@ test("explorer exclusions retain dynamically registered MCP tools discoverable a
   const output = result.content.map(block => block.text ?? "").join("\n");
   assert.match(output, /mcp__fixture__lookup/, "search/describe must discover the dynamically registered tool");
   assert.match(output, /fixture answer/, "codemode must call the registered fixture through the SDK pipeline");
+  assert.ok(!result.isError, output);
+});
+
+test("explorer can execute a local inspection command through the SDK", async t => {
+  const { session, faux } = await runtimeExplorer(t);
+  faux.setResponses([
+    fauxAssistantMessage(fauxToolCall("bash", {
+      command: "printf 'shell fixture answer\\n'",
+    }), { stopReason: "toolUse" }),
+    fauxAssistantMessage("Done"),
+  ]);
+
+  await session.prompt("Inspect the isolated fixture using the shell.");
+
+  const result = session.messages.find(message => message.role === "toolResult" && message.toolName === "bash");
+  assert.ok(result, "the SDK turn must produce a shell tool result");
+  const output = result.content.map(block => block.text ?? "").join("\n");
+  assert.match(output, /shell fixture answer/);
   assert.ok(!result.isError, output);
 });
 
