@@ -2,6 +2,9 @@ return {
 	{
 		"neovim/nvim-lspconfig",
 		event = { "BufReadPre", "BufNewFile" },
+		init = function()
+			vim.filetype.add({ extension = { rn = "rune" } })
+		end,
 		dependencies = {
 			"saghen/blink.cmp",
 		},
@@ -40,6 +43,13 @@ return {
 				},
 			})
 			vim.lsp.enable("ty")
+
+			-- Rune (cargo install rune-cli --locked)
+			vim.lsp.config("rune_languageserver", {
+				cmd = { "rune", "language-server" },
+				capabilities = capabilities,
+			})
+			vim.lsp.enable("rune_languageserver")
 
 			-- Java
 			vim.lsp.config("jdtls", {
