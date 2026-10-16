@@ -1,8 +1,26 @@
 return {
 	"nvim-treesitter/nvim-treesitter",
-	event = { "BufReadPost", "BufNewFile" },
+	lazy = false,
 	branch = "main",
 	build = ":TSUpdate",
+	dependencies = {
+		{
+			url = "https://somegit.dev/vikingowl/tree-sitter-rune.git",
+			name = "tree-sitter-rune",
+			init = function(plugin)
+				vim.api.nvim_create_autocmd("User", {
+					group = vim.api.nvim_create_augroup("RuneTreesitter", { clear = true }),
+					pattern = "TSUpdate",
+					callback = function()
+						-- Use the checkout because the installer assumes GitHub-style archives.
+						require("nvim-treesitter.parsers").rune = {
+							install_info = { path = plugin.dir, queries = "queries" },
+						}
+					end,
+				})
+			end,
+		},
+	},
 	opts = {
 		ensure_installed = {
 			"bash",
