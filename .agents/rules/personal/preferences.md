@@ -12,16 +12,16 @@ alwaysApply: true
 
 Provider: `openai`. Defaults, not fixed limits:
 
-| Agent | Model | Effort | Use |
-| --- | --- | --- | --- |
-| `explorer` | `gpt-6-luna` | high | Bounded read-only discovery across code, MCP, and web sources |
-| `advisor` | `gpt-6-astra` | medium | Recommend decisions and implementation direction; parent approves |
-| `worker` | `gpt-6.1-sol` | medium | Mechanical edits, existing features, plumbing, debugging |
-| `builder` | `gpt-6.1-sol` | high | Larger new features and novel technical designs |
-| `reviewer` | `gpt-6-luna` | high | Thorough exploratory review with fresh eyes: questions, potential issues, inconsistencies, and broad alternatives |
-| `interfaces-reviewer` | `gpt-6-luna` | high | Optional Ousterhout-style review of API depth, information hiding, module coherence, and composition |
-| `aesthetics-reviewer` | `gpt-6-luna` | high | Optional Taste for Makers review of code beauty, directness, nesting, branching, and organization |
-| `practices-reviewer` | `gpt-6-luna` | high | Optional review of immutable values, plain data, functional core/imperative shell, and decision placement |
+| Agent                 | Model         | Effort | Use                                                                                                               |
+| --------------------- | ------------- | ------ | ----------------------------------------------------------------------------------------------------------------- |
+| `explorer`            | `gpt-6-luna`  | high   | Bounded read-only discovery across code, MCP, and web sources                                                     |
+| `advisor`             | `gpt-6-astra` | medium | Recommend decisions and implementation direction; parent approves                                                 |
+| `worker`              | `gpt-6.1-sol` | medium | Mechanical edits, existing features, plumbing, debugging                                                          |
+| `builder`             | `gpt-6.1-sol` | high   | Larger new features and novel technical designs                                                                   |
+| `reviewer`            | `gpt-6-luna`  | high   | Thorough exploratory review with fresh eyes: questions, potential issues, inconsistencies, and broad alternatives |
+| `interfaces-reviewer` | `gpt-6-luna`  | high   | Optional Ousterhout-style review of API depth, information hiding, module coherence, and composition              |
+| `aesthetics-reviewer` | `gpt-6-luna`  | high   | Optional Taste for Makers review of code beauty, directness, nesting, branching, and organization                 |
+| `practices-reviewer`  | `gpt-6-luna`  | high   | Optional review of immutable values, plain data, functional core/imperative shell, and decision placement         |
 
 Keep Luna/high for focused reviews, narrow rechecks, and exploratory design review. Use `openai/gpt-6.1-sol:high` for broad integrated behavioral reviews with consequential UI lifecycle, async ownership, identity, persistence, rollback, or schema/toolchain risk. Select one appropriate reviewer model for the task; do not routinely duplicate the review across models.
 

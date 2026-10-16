@@ -323,7 +323,11 @@ const rateSegment = (theme: Theme, limit: RateLimit | undefined): string => {
   const resetText = reset
     ? ` ${theme.fg("dim", ICON.reset)} ${theme.fg("dim", reset)}`
     : "";
-  return `${theme.fg("dim", icon)}${windowText} ${bar(theme, limit.percent, 10)} ${Math.round(limit.percent)}%${resetText}`;
+  return `${theme.fg("dim", icon)}${windowText} ${bar(
+    theme,
+    limit.percent,
+    10,
+  )} ${Math.round(limit.percent)}%${resetText}`;
 };
 
 export default (pi: ExtensionAPI) => {
@@ -341,13 +345,15 @@ export default (pi: ExtensionAPI) => {
   let childCostRequestVersion = 0;
   let childCostTimeout: ReturnType<typeof setTimeout> | undefined;
   let unsubscribeChildCost: (() => void) | undefined;
-  let pendingResponse: {
-    sessionId: string;
-    startedAt: number;
-    generationStartedAt?: number;
-    thinkingObserved: boolean;
-    nonReasoningModel: boolean;
-  } | undefined;
+  let pendingResponse:
+    | {
+        sessionId: string;
+        startedAt: number;
+        generationStartedAt?: number;
+        thinkingObserved: boolean;
+        nonReasoningModel: boolean;
+      }
+    | undefined;
 
   // message_start happens after the provider's stream starts and misses latency.
   // This effective model-call interval includes auth/preparation and reasoning,
@@ -422,24 +428,31 @@ export default (pi: ExtensionAPI) => {
       elapsedMs,
     });
     const reasoning = event.message.usage.reasoning;
-    const thinkingObserved = pending.thinkingObserved ||
+    const thinkingObserved =
+      pending.thinkingObserved ||
       event.message.content?.some(part => part.type === "thinking");
     // Never apply total (possibly hidden reasoning) tokens to visible timing.
     // Finalized effort is authoritative; UI effort alone is not response metadata.
-    const generationTokens = reasoning !== undefined
-      ? (Number.isFinite(reasoning) && reasoning >= 0 && reasoning <= outputTokens
+    const generationTokens =
+      reasoning !== undefined
+        ? Number.isFinite(reasoning) &&
+          reasoning >= 0 &&
+          reasoning <= outputTokens
           ? outputTokens - reasoning
-          : undefined)
-      : (!thinkingObserved &&
-          (pending.nonReasoningModel || event.message.thinkingLevel === "off")
+          : undefined
+        : !thinkingObserved &&
+            (pending.nonReasoningModel || event.message.thinkingLevel === "off")
           ? outputTokens
-          : undefined);
-    const generationMs = pending.generationStartedAt === undefined
-      ? 0
-      : completedAt - pending.generationStartedAt;
+          : undefined;
+    const generationMs =
+      pending.generationStartedAt === undefined
+        ? 0
+        : completedAt - pending.generationStartedAt;
     if (
-      generationTokens !== undefined && generationTokens > 0 &&
-      Number.isFinite(generationMs) && generationMs > 0
+      generationTokens !== undefined &&
+      generationTokens > 0 &&
+      Number.isFinite(generationMs) &&
+      generationMs > 0
     ) {
       pi.appendEntry<ThroughputSample>(GENERATION_SAMPLE_TYPE, {
         version: 1,
@@ -602,7 +615,9 @@ export default (pi: ExtensionAPI) => {
   };
 
   const requestSnapshot = (ctx: ExtensionContext): void => {
-    pi.events.emit(REQUEST_EVENT, { sessionId: ctx.sessionManager.getSessionId() });
+    pi.events.emit(REQUEST_EVENT, {
+      sessionId: ctx.sessionManager.getSessionId(),
+    });
   };
 
   pi.on("session_start", (_event, ctx) => {
@@ -655,17 +670,36 @@ export default (pi: ExtensionAPI) => {
             ? snapshot.directories
             : [{ path: currentCtx?.cwd ?? ctx.cwd }];
           const home = homedir();
-          const hasPullRequests = snapshot?.pullRequests.some(pr => parsePullRequestUrl(pr.url) !== undefined) ?? false;
+          const hasPullRequests =
+            snapshot?.pullRequests.some(
+              pr => parsePullRequestUrl(pr.url) !== undefined,
+            ) ?? false;
           const directorySegments = directories.map(directory => {
             const path = sanitizeDisplayText(directory.path);
-            const label = path === home ? "~" : path.startsWith(`${home}/`) ? `~${path.slice(home.length)}` : path;
-            const icon = directory.workspace === "jj-workspace" ? ICON.jjWorkspace : ICON.directory;
+            const label =
+              path === home
+                ? "~"
+                : path.startsWith(`${home}/`)
+                  ? `~${path.slice(home.length)}`
+                  : path;
+            const icon =
+              directory.workspace === "jj-workspace"
+                ? ICON.jjWorkspace
+                : ICON.directory;
             return join(theme, [
               `${theme.fg("dim", icon)} ${label}`,
-              !hasPullRequests && directory.bookmark ? theme.fg("dim", `${ICON.branch} ${sanitizeDisplayText(directory.bookmark)}`) : undefined,
+              !hasPullRequests && directory.bookmark
+                ? theme.fg(
+                    "dim",
+                    `${ICON.branch} ${sanitizeDisplayText(directory.bookmark)}`,
+                  )
+                : undefined,
             ]);
           });
-          const groups = new Map<string, { url: string; prs: WorkPullRequest[] }>();
+          const groups = new Map<
+            string,
+            { url: string; prs: WorkPullRequest[] }
+          >();
           for (const directory of directories) {
             for (const url of directory.githubUrls ?? []) {
               const repo = url.slice("https://github.com/".length);
@@ -677,17 +711,31 @@ export default (pi: ExtensionAPI) => {
           for (const candidate of snapshot?.pullRequests ?? []) {
             const pr = parsePullRequestUrl(candidate.url);
             if (!pr) continue;
-            const group = groups.get(pr.repo) ?? { url: `https://github.com/${pr.repo}`, prs: [] };
-            if (!group.prs.some(item => item.number === pr.number)) group.prs.push(pr);
+            const group = groups.get(pr.repo) ?? {
+              url: `https://github.com/${pr.repo}`,
+              prs: [],
+            };
+            if (!group.prs.some(item => item.number === pr.number))
+              group.prs.push(pr);
             groups.set(pr.repo, group);
           }
           const repoNames = [...groups.keys()].map(repo => repo.split("/")[1]);
           const repositorySegments = [...groups].map(([repo, { url, prs }]) => {
             const shortName = repo.split("/")[1];
-            const label = repoNames.filter(name => name === shortName).length > 1 ? repo : shortName;
+            const label =
+              repoNames.filter(name => name === shortName).length > 1
+                ? repo
+                : shortName;
             const repositoryLink = `\u001b]8;;${url}\u001b\\${label}\u001b]8;;\u001b\\`;
-            const links = prs.map(pr => `\u001b]8;;${pr.url}\u001b\\#${pr.number}\u001b]8;;\u001b\\`).join(" ");
-            return `${theme.fg("dim", ICON.pullRequest)} ${repositoryLink}${links ? ` ${links}` : ""}`;
+            const links = prs
+              .map(
+                pr =>
+                  `\u001b]8;;${pr.url}\u001b\\#${pr.number}\u001b]8;;\u001b\\`,
+              )
+              .join(" ");
+            return `${theme.fg("dim", ICON.pullRequest)} ${repositoryLink}${
+              links ? ` ${links}` : ""
+            }`;
           });
 
           const line1Left = join(theme, [
@@ -695,8 +743,16 @@ export default (pi: ExtensionAPI) => {
             thinking
               ? `${theme.fg("dim", ICON.effort)} ${thinking}`
               : undefined,
-            averageThroughput(ctx, GENERATION_SAMPLE_TYPE, theme.fg("dim", ICON.generation)),
-            averageThroughput(ctx, THROUGHPUT_SAMPLE_TYPE, theme.fg("dim", ICON.request)),
+            averageThroughput(
+              ctx,
+              GENERATION_SAMPLE_TYPE,
+              theme.fg("dim", ICON.generation),
+            ),
+            averageThroughput(
+              ctx,
+              THROUGHPUT_SAMPLE_TYPE,
+              theme.fg("dim", ICON.request),
+            ),
           ]);
           const line1Right = join(theme, directorySegments);
 
@@ -704,17 +760,28 @@ export default (pi: ExtensionAPI) => {
             contextPercent !== undefined &&
             contextPercent !== null &&
             contextWindow
-              ? `${theme.fg("dim", ICON.context)} ${bar(theme, contextPercent, 5)} ${Math.round(contextPercent)}% ${theme.fg("dim", `${Math.floor(contextWindow / 1000)}k`)}`
+              ? `${theme.fg("dim", ICON.context)} ${bar(
+                  theme,
+                  contextPercent,
+                  5,
+                )} ${Math.round(contextPercent)}% ${theme.fg(
+                  "dim",
+                  `${Math.floor(contextWindow / 1000)}k`,
+                )}`
               : undefined;
           const tokenSegment =
             input > 0 || output > 0
-              ? `${theme.fg("dim", ICON.input)} ${formatTokens(input)} ${theme.fg("dim", ICON.output)} ${formatTokens(output)}`
+              ? `${theme.fg("dim", ICON.input)} ${formatTokens(
+                  input,
+                )} ${theme.fg("dim", ICON.output)} ${formatTokens(output)}`
               : undefined;
           const childCostSegment =
             childCost.status === "available"
               ? `${theme.fg("dim", ICON.plus)}${childCost.cost.toFixed(2)}`
               : "";
-          const costSegment = `${theme.fg("dim", ICON.cost)} ${cost.toFixed(2)}${childCostSegment}`;
+          const costSegment = `${theme.fg("dim", ICON.cost)} ${cost.toFixed(
+            2,
+          )}${childCostSegment}`;
           const line2Left = join(theme, [
             contextSegment,
             tokenSegment,
@@ -740,24 +807,49 @@ export default (pi: ExtensionAPI) => {
     unsubscribeSnapshot = pi.events.on(SNAPSHOT_EVENT, value => {
       if (!alive || !currentCtx || !value || typeof value !== "object") return;
       const next = value as WorkContextSnapshot;
-      if (next.version !== 1 || next.sessionId !== currentCtx.sessionManager.getSessionId() ||
-          !Array.isArray(next.directories) || !Array.isArray(next.pullRequests)) return;
-      if (!next.directories.every(directory => directory && typeof directory === "object" &&
-          typeof directory.path === "string" &&
-          (directory.revision === undefined || typeof directory.revision === "string") &&
-          (directory.bookmark === undefined || typeof directory.bookmark === "string") &&
-          (directory.workspace === undefined || directory.workspace === "jj-workspace" || directory.workspace === "git-worktree")) ||
-          !next.pullRequests.every(pr => pr && typeof pr === "object" && typeof pr.url === "string")) return;
+      if (
+        next.version !== 1 ||
+        next.sessionId !== currentCtx.sessionManager.getSessionId() ||
+        !Array.isArray(next.directories) ||
+        !Array.isArray(next.pullRequests)
+      )
+        return;
+      if (
+        !next.directories.every(
+          directory =>
+            directory &&
+            typeof directory === "object" &&
+            typeof directory.path === "string" &&
+            (directory.revision === undefined ||
+              typeof directory.revision === "string") &&
+            (directory.bookmark === undefined ||
+              typeof directory.bookmark === "string") &&
+            (directory.workspace === undefined ||
+              directory.workspace === "jj-workspace" ||
+              directory.workspace === "git-worktree"),
+        ) ||
+        !next.pullRequests.every(
+          pr => pr && typeof pr === "object" && typeof pr.url === "string",
+        )
+      )
+        return;
       // Optional local enrichment must not invalidate otherwise useful context.
       snapshot = {
         ...next,
         directories: next.directories.map(directory => {
           const { githubUrls, ...metadata } = directory;
           const urls = Array.isArray(githubUrls)
-            ? [...new Set(githubUrls.slice(0, 16).flatMap(value => {
-                const repository = typeof value === "string" ? parseGithubRepositoryUrl(value) : undefined;
-                return repository ? [repository.url] : [];
-              }))]
+            ? [
+                ...new Set(
+                  githubUrls.slice(0, 16).flatMap(value => {
+                    const repository =
+                      typeof value === "string"
+                        ? parseGithubRepositoryUrl(value)
+                        : undefined;
+                    return repository ? [repository.url] : [];
+                  }),
+                ),
+              ]
             : [];
           return urls.length ? { ...metadata, githubUrls: urls } : metadata;
         }),

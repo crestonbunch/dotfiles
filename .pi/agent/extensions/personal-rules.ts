@@ -19,9 +19,14 @@ const readPersonalRules = (rulesDir: string): PersonalRule[] => {
   for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
     if (!entry.isFile() || !entry.name.endsWith(".md")) continue;
     const file = readFileSync(join(rulesDir, entry.name), "utf8");
-    const frontmatter = /^---[ \t]*\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/.exec(file);
-    if (!frontmatter || !/^alwaysApply:[ \t]*true[ \t]*$/m.test(frontmatter[1])) continue;
-    rules.push({ name: entry.name, content: file.slice(frontmatter[0].length).trim() });
+    const frontmatter =
+      /^---[ \t]*\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/.exec(file);
+    if (!frontmatter || !/^alwaysApply:[ \t]*true[ \t]*$/m.test(frontmatter[1]))
+      continue;
+    rules.push({
+      name: entry.name,
+      content: file.slice(frontmatter[0].length).trim(),
+    });
   }
   return rules;
 };
@@ -33,7 +38,8 @@ export const loadPersonalRules = (rulesDir: string): string =>
   renderPersonalRules(readPersonalRules(rulesDir));
 
 // Own only this marked block; preserve forced role and child-boundary text verbatim.
-const forcedRulesBlock = /(?:\n\n)?<!-- pi-personal-rules:start -->[\s\S]*?<!-- pi-personal-rules:end -->/g;
+const forcedRulesBlock =
+  /(?:\n\n)?<!-- pi-personal-rules:start -->[\s\S]*?<!-- pi-personal-rules:end -->/g;
 
 export default (
   pi: ExtensionAPI,
@@ -47,9 +53,14 @@ export default (
   pi.registerCommand("rules", {
     description: "Show loaded personal rules",
     handler: (_args, ctx) => {
-      const size = Buffer.byteLength(rules.map(rule => rule.content).join("\n\n"), "utf8");
+      const size = Buffer.byteLength(
+        rules.map(rule => rule.content).join("\n\n"),
+        "utf8",
+      );
       const summary = rules.length
-        ? `${rules.length} personal rules (${size} bytes):\n${rules.map(rule => `- ${rule.name}`).join("\n")}`
+        ? `${rules.length} personal rules (${size} bytes):\n${rules
+            .map(rule => `- ${rule.name}`)
+            .join("\n")}`
         : "No always-applied personal rules found";
       ctx.ui.notify(summary, "info");
     },
@@ -68,7 +79,9 @@ export default (
     if (typeof options.forceSystemPrompt === "string") {
       const base = options.forceSystemPrompt.replace(forcedRulesBlock, "");
       options.forceSystemPrompt = section
-        ? `${base}${base ? "\n\n" : ""}<!-- pi-personal-rules:start -->\n${section}\n<!-- pi-personal-rules:end -->`
+        ? `${base}${
+            base ? "\n\n" : ""
+          }<!-- pi-personal-rules:start -->\n${section}\n<!-- pi-personal-rules:end -->`
         : base;
     }
   });
