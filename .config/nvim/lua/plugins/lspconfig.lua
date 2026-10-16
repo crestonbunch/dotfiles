@@ -3,7 +3,7 @@ return {
 		"neovim/nvim-lspconfig",
 		event = { "BufReadPre", "BufNewFile" },
 		init = function()
-			vim.filetype.add({ extension = { rn = "rune" } })
+			vim.filetype.add({ extension = { glu = "gluon", rn = "rune" } })
 		end,
 		dependencies = {
 			"saghen/blink.cmp",
@@ -50,6 +50,24 @@ return {
 				capabilities = capabilities,
 			})
 			vim.lsp.enable("rune_languageserver")
+
+			-- Gluon (cargo install gluon_language-server --locked)
+			vim.lsp.config("gluon_ls", {
+				cmd = { "gluon_language-server" },
+				filetypes = { "gluon" },
+				root_markers = { ".git" },
+				capabilities = capabilities,
+			})
+			vim.lsp.enable("gluon_ls")
+
+			-- Current Roc compiler, not the older standalone roc_language_server.
+			vim.lsp.config("roc_ls", {
+				cmd = { "roc", "experimental-lsp" },
+				capabilities = capabilities,
+				-- Semantic checking can execute compile-time code and download packages.
+				init_options = { trustedWorkspace = false },
+			})
+			vim.lsp.enable("roc_ls")
 
 			-- Java
 			vim.lsp.config("jdtls", {

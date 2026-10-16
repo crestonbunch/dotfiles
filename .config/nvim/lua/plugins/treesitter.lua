@@ -3,6 +3,22 @@ return {
 	lazy = false,
 	branch = "main",
 	build = ":TSUpdate",
+	init = function()
+		vim.api.nvim_create_autocmd("User", {
+			group = vim.api.nvim_create_augroup("RocTreesitter", { clear = true }),
+			pattern = "TSUpdate",
+			callback = function()
+				-- The bundled parser predates the current Roc syntax.
+				require("nvim-treesitter.parsers").roc = {
+					install_info = {
+						url = "https://github.com/faldor20/tree-sitter-roc",
+						revision = "7f9ae855ba7819c5d9279853691fd072e233226b",
+						queries = "queries-generated/neovim/queries",
+					},
+				}
+			end,
+		})
+	end,
 	dependencies = {
 		{
 			url = "https://somegit.dev/vikingowl/tree-sitter-rune.git",
