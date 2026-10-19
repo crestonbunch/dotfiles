@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
+import { getPackageDir, type ExtensionAPI, type ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { Key } from '@earendil-works/pi-tui';
 import { activeChildren, ZellijView } from './core.mjs';
 import { findRunDir } from './artifacts.mjs';
@@ -110,7 +110,7 @@ export default function zellijSubagents(pi: ExtensionAPI): void {
   function activate(context: ExtensionContext) {
     if (context.mode !== 'tui' || !process.env.ZELLIJ) { context.ui.notify('Open this Pi session inside Zellij to use Alt+Z.', 'warning'); return; }
     if (!ctx) ctx = context;
-    if (!view) view = new ZellijView({ viewer, name: `pi async ${randomUUID().slice(0, 8)}` });
+    if (!view) view = new ZellijView({ viewer, piPackage: getPackageDir(), name: `pi async ${randomUUID().slice(0, 8)}` });
     start(true);
   }
   pi.registerShortcut(Key.alt('z'), { description: 'Open/focus async subagent Zellij tab', handler: activate });

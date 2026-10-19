@@ -7,8 +7,8 @@ import { sessionFileFor } from './transcript.mjs';
 const MAX_LINE = 256 * 1024;
 const MAX_DETAIL = 12 * 1024;
 export function clean(text) {
-  return text.replace(/\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07]*(?:\x07|\x1b\\))?/g, '')
-    .replace(/[\x00-\x1f\x7f-\x9f]/g, ' ');
+  return text.replace(/\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07]*?(?:\x07|\x1b\\))?/g, '')
+    .replace(/\r\n?/g, '\n').replace(/[\x00-\x08\x0b-\x1f\x7f-\x9f]/g, '');
 }
 function bounded(value, max = MAX_DETAIL) {
   const text = clean(value);
@@ -25,20 +25,21 @@ export function entries(line) {
   const result = [];
   if (message.role === 'assistant') {
     if (Array.isArray(message.content)) for (const item of message.content) {
-      if (item?.type === 'text' && typeof item.text === 'string') result.push({ kind: 'assistant', detail: bounded(item.text) });
+      if (item?.type === 'text' && typeof item.text === 'string') result.push({ kind: 'assistant', format: 'markdown', detail: bounded(item.text) });
       else if (item?.type === 'toolCall' && typeof item.name === 'string') {
-        const name = bounded(item.name, 80);
+        const name = bounded(item.name, 80).replace(/\s/g, ' ');
         const args = item.arguments && typeof item.arguments === 'object' && !Array.isArray(item.arguments)
           ? ['path', 'pattern', 'glob', 'query', 'command'].filter(key => typeof item.arguments[key] === 'string')
             .map(key => `${key}=${bounded(redacted(item.arguments[key]), 1000)}`).join('\n') : '';
-        result.push({ kind: `tool ${name}`, detail: args ? `${name}\n${bounded(args)}` : name });
+        result.push({ kind: `tool ${name}`, toolCallId: item.id, path: typeof item.arguments?.path === 'string' ? bounded(item.arguments.path, 1000) : undefined,
+          language: name === 'bash' ? 'bash' : undefined, detail: args ? `${name}\n${bounded(args)}` : name });
       }
     }
     if (message.stopReason === 'error' && typeof message.errorMessage === 'string') result.push({ kind: 'assistant error', detail: bounded(message.errorMessage) });
   } else if (message.role === 'toolResult') {
-    const name = typeof message.toolName === 'string' ? bounded(message.toolName, 80) : 'tool';
+    const name = typeof message.toolName === 'string' ? bounded(message.toolName, 80).replace(/\s/g, ' ') : 'tool';
     const content = Array.isArray(message.content) ? message.content.filter(item => item?.type === 'text' && typeof item.text === 'string').map(item => item.text).join('\n') : '';
-    result.push({ kind: `${message.isError === true ? 'error' : 'result'} ${name}`, detail: bounded(content) });
+    result.push({ kind: `${message.isError === true ? 'error' : 'result'} ${name}`, toolCallId: message.toolCallId, detail: bounded(content) });
   }
   return result;
 }
@@ -67,19 +68,53 @@ export async function scan(stream, onLine) {
     consumed += data.length;
   }
 }
-export async function preview(file, id) {
-  if (!/^(0|[1-9]\d{0,15}):[0-9]{1,5}$/.test(id)) return '(invalid selection)';
-  const [offset, part] = id.split(':').map(Number);
-  if (!Number.isSafeInteger(offset)) return '(invalid selection)';
+// A result may carry the byte address of its tool call, not an arbitrary path.
+// This keeps file-type inference bounded even in very large transcripts.
+export async function preview(file, id, { renderer, raw = true, width = 80 } = {}) {
+  if (!/^(0|[1-9]\d{0,15}):[0-9]{1,5}(?::(0|[1-9]\d{0,15}):[0-9]{1,5})?$/.test(id)) return '(invalid selection)';
+  const [offset, part, callOffset, callPart] = id.split(':').map(Number);
+  if (!Number.isSafeInteger(offset) || (callOffset !== undefined && !Number.isSafeInteger(callOffset))) return '(invalid selection)';
   const handle = await fs.promises.open(file, 'r');
   try {
-    const buffer = Buffer.alloc(MAX_LINE + 1);
-    const { bytesRead } = await handle.read(buffer, 0, buffer.length, offset);
-    const end = buffer.subarray(0, bytesRead).indexOf(10);
-    if (end < 0 || end > MAX_LINE) return '(entry unavailable)';
-    const entry = entries(buffer.subarray(0, end).toString('utf8'))[part];
-    return entry ? `${entry.kind}\n\n${entry.detail}` : '(entry unavailable)';
+    async function at(position, index) {
+      const buffer = Buffer.alloc(MAX_LINE + 1);
+      const { bytesRead } = await handle.read(buffer, 0, buffer.length, position);
+      const end = buffer.subarray(0, bytesRead).indexOf(10);
+      return end < 0 || end > MAX_LINE ? undefined : entries(buffer.subarray(0, end).toString('utf8'))[index];
+    }
+    const entry = await at(offset, part);
+    if (!entry) return '(entry unavailable)';
+    if (entry.kind === 'result read' && callOffset !== undefined && callOffset < offset) {
+      const call = await at(callOffset, callPart);
+      if (call?.kind === 'tool read' && typeof call.toolCallId === 'string' && call.toolCallId === entry.toolCallId) entry.path = call.path;
+    }
+    let detail = entry.detail;
+    if (!raw && renderer) {
+      try { detail = await renderer(entry, width); }
+      catch (error) {
+        const reason = bounded(String(error?.message ?? error), 180).replace(/\s/g, ' ');
+        detail = `(formatting unavailable: ${reason})\n\n${entry.detail}`;
+      }
+    }
+    return `${entry.kind}\n\n${detail}`;
   } finally { await handle.close(); }
+}
+
+export async function list(stream, emit) {
+  const calls = new Map();
+  await scan(stream, (line, _number, offset) => {
+    entries(line).forEach((entry, part) => {
+      let id = `${offset}:${part}`;
+      if (entry.kind.startsWith('tool ') && typeof entry.toolCallId === 'string' && entry.toolCallId.length <= 256) {
+        calls.set(entry.toolCallId, id);
+        if (calls.size > 10000) calls.delete(calls.keys().next().value);
+      } else if (typeof entry.toolCallId === 'string' && calls.has(entry.toolCallId)) {
+        id += `:${calls.get(entry.toolCallId)}`;
+        calls.delete(entry.toolCallId);
+      }
+      emit(row(id, entry));
+    });
+  });
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
@@ -90,10 +125,13 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   const file = await sessionFileFor(dir, child, index);
   if (!file) { if (mode === '--preview') console.log('(session unavailable)'); else process.exitCode = 2; }
   else if (mode === '--preview') {
-    try { console.log(await preview(file, id)); } catch { console.log('(entry unavailable)'); }
+    try {
+      const { loadRenderer } = await import('./preview.mjs');
+      const raw = process.env.FZF_PREVIEW_LABEL === 'Raw';
+      const renderer = raw ? undefined : async (entry, width) => (await loadRenderer(process.env.ZELLIJ_PI_PACKAGE))(entry, width);
+      console.log(await preview(file, id, { renderer, raw, width: Number(process.env.FZF_PREVIEW_COLUMNS) || 80 }));
+    } catch { console.log('(entry unavailable)'); }
   } else if (mode === '--list') {
-    await scan(process.stdin, (line, _number, offset) => {
-      entries(line).forEach((entry, part) => process.stdout.write(`${row(`${offset}:${part}`, entry)}\n`));
-    });
+    await list(process.stdin, value => process.stdout.write(`${value}\n`));
   } else process.exitCode = 2;
 }

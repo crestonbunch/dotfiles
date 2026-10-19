@@ -8,7 +8,7 @@ import { EventEmitter } from 'node:events';
 import { PassThrough } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 import { sessionFileFor, startTranscript } from './transcript.mjs';
-import { entries, row, preview, scan } from './events.mjs';
+import { entries, row, preview, scan, list } from './events.mjs';
 import { Readable } from 'node:stream';
 
 const fixture = [
@@ -100,7 +100,7 @@ test('event list and preview exclude prompts/thinking and bound, sanitize and se
     const firstId = rows[0].split('\t')[0];
     const toolId = rows[1].split('\t')[0];
     const lastId = rows[3].split('\t')[0];
-    assert.match(await preview(file, firstId), /Visible answer red/);
+    assert.match(await preview(file, firstId), /Visible answer\nred/);
     assert.match(await preview(file, toolId), /token=\[redacted\]/i);
     assert.match(await preview(file, lastId), /\[truncated\]/);
     assert.ok((await preview(file, lastId)).length < 12400);
@@ -108,6 +108,42 @@ test('event list and preview exclude prompts/thinking and bound, sanitize and se
     const scanned = [];
     await scan(Readable.from([`${'x'.repeat(300000)}\n`, fixture]), (line, number) => scanned.push(number));
     assert.equal(scanned[0], 2); // oversized untrusted JSONL line is skipped
+  } finally { await fs.rm(tmp, { recursive: true, force: true }); }
+});
+
+test('preview preserves source whitespace while list rows stay single-line and controls are removed', async () => {
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'zellij-whitespace-'));
+  try {
+    const file = path.join(tmp, 'session.jsonl');
+    const source = 'fn main() {\r\n\tlet x = 1;\n\n    x\n}\n\x1b]52;c;secret\x07\x1b[2J';
+    await fs.writeFile(file, JSON.stringify({ type: 'message', message: { role: 'toolResult', toolName: 'read', content: [{ type: 'text', text: source }] } }) + '\n');
+    const rows = [];
+    await list(Readable.from([await fs.readFile(file)]), value => rows.push(value));
+    assert.equal(rows.length, 1);
+    assert.doesNotMatch(rows[0], /\n|\r|\x1b/);
+    assert.equal(await preview(file, '0:0'), 'result read\n\nfn main() {\n\tlet x = 1;\n\n    x\n}\n');
+  } finally { await fs.rm(tmp, { recursive: true, force: true }); }
+});
+
+test('read result preview infers its path only from the matching tool call', async () => {
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'zellij-file-type-'));
+  try {
+    const file = path.join(tmp, 'session.jsonl');
+    const source = [
+      { type: 'message', message: { role: 'assistant', content: [{ type: 'toolCall', id: 'call-1', name: 'read', arguments: { path: 'main.rs' } }] } },
+      { type: 'message', message: { role: 'toolResult', toolCallId: 'call-1', toolName: 'read', content: [{ type: 'text', text: 'fn main() {}' }] } },
+      { type: 'message', message: { role: 'toolResult', toolCallId: 'other', toolName: 'read', content: [{ type: 'text', text: 'unknown' }] } },
+    ].map(value => JSON.stringify(value)).join('\n') + '\n';
+    await fs.writeFile(file, source);
+    const rows = [];
+    await list(Readable.from([source]), value => rows.push(value));
+    const resultId = rows[1].split('\t')[0];
+    assert.match(resultId, /^\d+:0:0:0$/);
+    const renderer = entry => `${entry.path ?? 'plain'}: ${entry.detail}`;
+    assert.equal(await preview(file, resultId, { renderer, raw: false }), 'result read\n\nmain.rs: fn main() {}');
+    const unmatchedId = rows[2].split('\t')[0];
+    assert.equal(await preview(file, `${unmatchedId}:0:0`, { renderer, raw: false }), 'result read\n\nplain: unknown');
+    assert.equal(await preview(file, resultId, { renderer, raw: true }), 'result read\n\nfn main() {}');
   } finally { await fs.rm(tmp, { recursive: true, force: true }); }
 });
 
@@ -142,6 +178,8 @@ test('pane wrapper invokes live tail/Node/fzf directly; exit cleans up feed with
   const feed = startTranscript('/safe path/session.jsonl', { runDir: '/safe path/run', childId: 'child', index: 0, spawnProcess });
   assert.deepEqual(calls.map(c => c.command), ['fzf', process.execPath, 'tail']);
   assert.ok(calls[0].args.includes('--tac'));
+  assert.ok(calls[0].args.includes('--track'));
+  assert.ok(calls[0].args.includes('--id-nth=1'));
   assert.ok(calls[0].args.includes('--preview'));
   assert.match(calls[0].args[calls[0].args.indexOf('--preview') + 1], /--preview \{1\}$/);
   assert.deepEqual(calls[2].args, ['-n', '+1', '-f', '/safe path/session.jsonl']);

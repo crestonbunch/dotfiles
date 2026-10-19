@@ -74,7 +74,12 @@ function mockView() {
     calls.push(args);
     switch (args[0]) {
       case 'new-tab': tabs.push({ tab_id: 42, name: args[args.indexOf('--name') + 1], active: true }); panes.push({ id: 555, is_plugin: true, tab_id: 42 }); panes.push({ id: next++, is_plugin: false, tab_id: 42 }); return '42\n';
-      case 'new-pane': { const id = next++; panes.push({ id, is_plugin: false, tab_id: 42 }); return `terminal_${id}\n`; }
+      case 'new-pane': {
+        const id = next++;
+        if (!args.includes('--no-focus')) panes.forEach(p => { p.is_focused = false; });
+        panes.push({ id, is_plugin: false, tab_id: 42, is_focused: !args.includes('--no-focus') });
+        return `terminal_${id}\n`;
+      }
       case 'list-tabs': return JSON.stringify(tabs);
       case 'list-panes': return JSON.stringify(panes);
       case 'close-pane': {
@@ -236,6 +241,62 @@ test('history cap prunes only confirmed terminal children, retaining uncertain p
   await v.reconcile([], new Map());
   assert.equal(v.panes.get(retained.key), pane);
   assert.ok(!calls.some(args => args[0] === 'close-pane' && args[2] === pane));
+});
+
+test('new children leave the selected pane focused', async () => {
+  const { panes, v } = mockView();
+  await v.open();
+  await v.reconcile([child('reading')], dirs);
+  const selected = panes.find(p => `terminal_${p.id}` === v.panes.get('r:reading'));
+  selected.is_focused = true;
+  await v.reconcile([child('reading'), child('new')], dirs);
+  assert.equal(selected.is_focused, true);
+  assert.equal(panes.find(p => `terminal_${p.id}` === v.panes.get('r:new')).is_focused, false);
+});
+
+test('history pruning and explicit clearing retain the focused finished pane', async () => {
+  const { panes, states, v } = mockView();
+  await v.open();
+  await v.reconcile([child('reading')], dirs);
+  const selectedId = v.panes.get('r:reading');
+  const selected = panes.find(p => `terminal_${p.id}` === selectedId);
+  selected.is_focused = true;
+  states.set('reading', 'complete');
+  await v.reconcile([], new Map());
+  for (let i = 0; i < 21; i++) {
+    const done = child(`done${i}`);
+    await v.reconcile([done], dirs);
+    states.set(done.id, 'complete');
+    await v.reconcile([], new Map());
+  }
+  assert.equal(v.finished.size, 20);
+  assert.equal(v.finished.get('r:reading'), selectedId);
+  assert.equal(selected.is_focused, true);
+  await v.clearCompleted();
+  assert.deepEqual([...v.finished.values()], [selectedId]);
+  assert.ok(panes.includes(selected));
+  selected.is_focused = false;
+  await v.clearCompleted();
+  assert.equal(v.finished.size, 0);
+  assert.ok(v.emptyPane);
+});
+
+test('cleanup rechecks focus at the layout boundary before closing a finished pane', async () => {
+  const { panes, states, v } = mockView();
+  await v.open();
+  await v.reconcile([child('reading')], dirs);
+  const selectedId = v.panes.get('r:reading');
+  const selected = panes.find(p => `terminal_${p.id}` === selectedId);
+  states.set('reading', 'complete');
+  await v.reconcile([], new Map());
+  const layout = v.layout.bind(v);
+  v.layout = (args, options) => {
+    if (args[0] === 'close-pane' && args[2] === selectedId) selected.is_focused = true;
+    return layout(args, options);
+  };
+  await v.clearCompleted();
+  assert.equal(v.finished.get('r:reading'), selectedId);
+  assert.ok(panes.includes(selected));
 });
 
 test('mock Zellij caps history at 20 oldest finished panes, preserving active panes', async () => {

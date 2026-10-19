@@ -36,7 +36,7 @@ export async function sessionFileFor(runDir, childId, index) {
 // fzf consumes a live stream and renders detail only for the highlighted event.
 // No user-controlled data is interpolated into a shell command: preview gets only
 // a generated numeric ID, and the helper revalidates the session path on each call.
-export function startTranscript(file, { runDir, childId, index, spawnProcess = spawn } = {}) {
+export function startTranscript(file, { runDir, childId, index, piPackage, spawnProcess = spawn } = {}) {
   const children = [];
   let stopped = false;
   const stop = () => {
@@ -50,13 +50,32 @@ export function startTranscript(file, { runDir, childId, index, spawnProcess = s
   };
   try {
     const env = { ...process.env, ZELLIJ_CHILD_RUN_DIR: runDir, ZELLIJ_CHILD_ID: childId,
-      ZELLIJ_CHILD_INDEX: index === undefined ? '' : String(index), FZF_DEFAULT_OPTS: '' };
-    const finder = spawnProcess('fzf', ['--tac', '--no-sort', '--tail=10000', '--disabled', '--delimiter=\t', '--with-nth=2', '--nth=2',
-      '--layout=reverse', '--preview-window=down:60%:wrap', '--preview', `${quote(process.execPath)} ${quote(helper)} --preview {1}`,
-      '--bind', 'j:down,k:up,ctrl-j:preview-down,ctrl-k:preview-up,alt-j:preview-down,alt-k:preview-up',
-      '--bind', '/:enable-search+unbind(j,k)+change-prompt(Search> ),ctrl-g:disable-search+rebind(j,k)+change-query()+change-prompt(Events> )',
-      '--prompt', 'Events> ', '--header', '↑↓/j/k select · / search (Ctrl-G back) · Ctrl-J/K scroll detail · Esc/Ctrl-C exit',
-      '--bind', 'ctrl-c:abort'], { stdio: ['pipe', 'inherit', 'inherit'], env });
+      ZELLIJ_PI_PACKAGE: piPackage, ZELLIJ_CHILD_INDEX: index === undefined ? '' : String(index),
+      FZF_DEFAULT_OPTS: '', FZF_DEFAULT_OPTS_FILE: '', FORCE_COLOR: '1' };
+    const pause = 'if [ "$FZF_PROMPT" = "Follow> " ]; then printf "change-prompt(Events> )"; fi';
+    const status = 'if [ "$FZF_PROMPT" = "Follow> " ]; then printf "Following latest"; else n=$((FZF_POS > 0 ? FZF_POS - 1 : 0)); printf "Reading · %s newer %s" "$n" "${FZF_QUERY:+matching }events"; fi';
+    const navigation = [['j', 'down'], ['k', 'up'], ['down', 'down'], ['up', 'up'], ['ctrl-n', 'down'], ['ctrl-p', 'up'],
+      ['pgdn', 'page-down'], ['pgup', 'page-up'], ['home', 'first'], ['end', 'last'],
+      ['alt-down', 'down'], ['alt-up', 'up'], ['scroll-down', 'down'], ['scroll-up', 'up'],
+      ['preview-scroll-down', 'preview-down'], ['preview-scroll-up', 'preview-up'],
+      ['ctrl-j', 'preview-down'], ['ctrl-k', 'preview-up'], ['alt-j', 'preview-down'], ['alt-k', 'preview-up'],
+      ['shift-down', 'preview-down'], ['shift-up', 'preview-up']]
+      .map(([key, action]) => `${key}:transform(${pause})+${action}+transform-list-label(${status})`).join(',');
+    // Reset filtering before disabling search. fzf's wait action cannot be used
+    // here: an open-ended tail keeps it waiting forever and locks keyboard input.
+    const update = 'if [ "$FZF_PROMPT" != "Search> " ] && [ "$FZF_INPUT_STATE" != "disabled" ]; then printf "disable-search+"; fi; if [ "$FZF_PROMPT" = "Follow> " ]; then printf first; else printf ignore; fi';
+    const finder = spawnProcess('fzf', ['--tac', '--no-sort', '--track', '--id-nth=1', '--tail=10000', '--disabled', '--delimiter=\t', '--with-nth=2', '--nth=1',
+      '--layout=reverse', '--preview-window=down:75%:wrap', '--preview-label=Rendered',
+      '--preview', `${quote(process.execPath)} ${quote(helper)} --preview {1}`,
+      '--bind', navigation,
+      '--bind', `result:transform(${update})+transform-list-label(${status}),focus:transform-list-label(${status})`,
+      '--list-border=rounded', '--list-label=Reading',
+      '--bind', `f:change-query()+enable-search+change-prompt(Follow> )+first+transform-list-label(${status})`,
+      '--bind', 'r:transform-preview-label(if [ "$FZF_PREVIEW_LABEL" = "Raw" ]; then printf Rendered; else printf Raw; fi)+refresh-preview',
+      '--bind', 'w:toggle-preview-wrap,p:change-preview-window(down:99%|down:75%)',
+      '--bind', '/:enable-search+unbind(j,k,f,r,w,p)+change-prompt(Search> ),ctrl-g:change-query()+enable-search+rebind(j,k,f,r,w,p)+change-prompt(Events> )',
+      '--prompt', 'Events> ', '--header', '↑↓/j/k select · / search · Ctrl-G back · Ctrl-J/K scroll\nf follow · r raw/rendered · w wrap · p preview only · Esc exit',
+      '--bind', `ctrl-c:abort,enter:ignore,double-click:ignore,left-click:transform(${pause})+transform-list-label(${status})`], { stdio: ['pipe', 'inherit', 'inherit'], env });
     children.push(finder);
     const list = spawnProcess(process.execPath, [helper, '--list'], { stdio: ['pipe', 'pipe', 'ignore'], env });
     children.push(list);

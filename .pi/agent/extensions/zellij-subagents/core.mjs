@@ -74,9 +74,10 @@ function paneId(pane) {
 function paneTabId(pane) { return String(pane.tab_id ?? pane.tabId ?? pane.tab?.id ?? ''); }
 
 export class ZellijView {
-  constructor({ cli = async (args) => (await execFile('zellij', ['action', ...args], { timeout: 4000, maxBuffer: 256 * 1024 })).stdout, viewer, name, readStatus = readRunStatus }) {
+  constructor({ cli = async (args) => (await execFile('zellij', ['action', ...args], { timeout: 4000, maxBuffer: 256 * 1024 })).stdout, viewer, name, piPackage, readStatus = readRunStatus }) {
     this.cli = cli;
     this.viewer = viewer;
+    this.piPackage = piPackage;
     this.name = name;
     this.tab = undefined;
     this.panes = new Map();
@@ -88,7 +89,7 @@ export class ZellijView {
     this.chromePanes = new Set();
   }
   async inventory() {
-    const [tabs, panes] = await Promise.all([this.cli(['list-tabs', '--json']), this.cli(['list-panes', '--json', '--tab'])]);
+    const [tabs, panes] = await Promise.all([this.cli(['list-tabs', '--json']), this.cli(['list-panes', '--json', '--tab', '--state'])]);
     return { tabs: tabList(tabs), panes: paneList(panes) };
   }
   async owned() {
@@ -135,8 +136,15 @@ export class ZellijView {
   }
   // Recheck visibility after every awaited read, immediately before each mutation.
   // Zellij layout actions can activate the target tab even with --no-focus.
-  async layout(args) {
-    if (!await this.visible()) return false;
+  // Protected closes return null when the pane should be retained, false when
+  // the tab is inactive. There are no further reads after this final snapshot;
+  // Zellij's CLI cannot make checking focus and closing a pane atomic.
+  async layout(args, { protectFocus = false } = {}) {
+    if (protectFocus) {
+      const { tabs, panes } = await this.inventory();
+      if (!tabs.some(t => tabId(t) === this.tab && t.name === this.name && t.active === true)) return false;
+      if (panes.some(p => paneId(p) === args[2] && paneTabId(p) === this.tab && p.is_focused === true)) return null;
+    } else if (!await this.visible()) return false;
     return this.cli(args);
   }
   async reconcile(children, dirs) {
@@ -157,6 +165,7 @@ export class ZellijView {
       }
       const args = ['new-pane', '--tab-id', this.tab, '--stacked', '--no-focus', '--name', child.label.slice(0, 60), '--', process.execPath, this.viewer, '--run-dir', dirs.get(child.rootId), '--child-id', child.id];
       if (child.index !== undefined) args.push('--index', String(child.index));
+      if (this.piPackage) args.push('--pi-package', this.piPackage);
       const created = await this.layout(args);
       if (created === false) return false;
       const pane = created.trim();
@@ -188,7 +197,9 @@ export class ZellijView {
     for (const [key, pane] of this.finished) {
       if (this.finished.size <= MAX_FINISHED) break;
       if (!await this.isTerminal(key)) continue;
-      if (await this.layout(['close-pane', '--pane-id', pane]) === false) return false;
+      const closed = await this.layout(['close-pane', '--pane-id', pane], { protectFocus: true });
+      if (closed === false) return false;
+      if (closed === null) continue;
       this.finished.delete(key);
       this.sources.delete(key);
       this.labels.delete(key);
@@ -215,7 +226,10 @@ export class ZellijView {
         this.panes.set(key, pane);
         continue;
       }
-      if (await this.layout(['close-pane', '--pane-id', pane]) === false) return false;
+      // Even explicit clearing leaves the currently read pane available.
+      const closed = await this.layout(['close-pane', '--pane-id', pane], { protectFocus: true });
+      if (closed === false) return false;
+      if (closed === null) continue;
       this.finished.delete(key);
       this.sources.delete(key);
       this.labels.delete(key);

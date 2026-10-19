@@ -69,7 +69,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(new URL(im
       if (!file) failedFile = undefined;
       if (file && file !== failedFile) {
         paging = true;
-        feed = startTranscript(file, { runDir: dir, childId, index });
+        feed = startTranscript(file, { runDir: dir, childId, index, piPackage: value('--pi-package') });
         const reason = await feed.done;
         feed = undefined;
         paging = false;
