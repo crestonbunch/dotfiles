@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { request as httpsRequest } from "node:https";
+import https from "node:https";
 import { homedir } from "node:os";
 import {
   REQUEST_EVENT,
@@ -289,7 +289,7 @@ const getJson = (
   timeoutMs: number,
 ): Promise<unknown> =>
   new Promise((resolve, reject) => {
-    const req = httpsRequest(url, { headers, timeout: timeoutMs }, res => {
+    const req = https.request(url, { headers, timeout: timeoutMs }, res => {
       const chunks: Buffer[] = [];
       res.on("data", (chunk: Buffer) => chunks.push(chunk));
       res.on("end", () => {
@@ -540,11 +540,12 @@ export default (pi: ExtensionAPI) => {
     });
   };
 
-  // pi reaches Codex over a WebSocket by default, so `after_provider_response`
-  // never carries the rate-limit headers. Read the limits from the account
-  // usage endpoint instead.
+  // WebSocket responses omit rate-limit headers. The new `openai` direct-flow
+  // token cannot read account usage either, so poll with the separate legacy
+  // Codex credential for both providers. This reports account, not app limits.
   const refreshCodexUsage = async (ctx: ExtensionContext): Promise<void> => {
-    if (usageActive || ctx.model?.provider !== CODEX_PROVIDER) {
+    const provider = ctx.model?.provider;
+    if (usageActive || (provider !== "openai" && provider !== CODEX_PROVIDER)) {
       return;
     }
     const now = Date.now();

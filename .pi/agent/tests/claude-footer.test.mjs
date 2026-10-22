@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
+import https from "node:https";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
@@ -71,7 +72,7 @@ const setUp = (t, { respond, snapshot } = {}) => {
   };
   claudeFooter(pi);
 
-  const startSession = (sessionId, { cwd = "/tmp/project", entries, mode = "tui", reasoning = false } = {}) => {
+  const startSession = (sessionId, { cwd = "/tmp/project", entries, mode = "tui", reasoning = false, provider = "test", modelRegistry = {} } = {}) => {
     activeEntries = entries ?? [{
       message: {
         role: "assistant",
@@ -84,8 +85,8 @@ const setUp = (t, { respond, snapshot } = {}) => {
       cwd,
       getContextUsage: () => ({ contextWindow: 200_000, percent: 10 }),
       mode,
-      model: { contextWindow: 200_000, name: "Test Model", provider: "test", reasoning },
-      modelRegistry: {},
+      model: { contextWindow: 200_000, name: "Test Model", provider, reasoning },
+      modelRegistry,
       sessionManager: {
         getEntries: () => sessionEntries,
         getBranch: () => { throw new Error("Footer must read whole-file entries"); },
@@ -124,6 +125,96 @@ const costReply = (request, cost, incomplete = false) => ({
   requestId: request.requestId,
   success: true,
   version: 1,
+});
+
+const legacyUsageToken = `header.${Buffer.from(JSON.stringify({
+  "https://api.openai.com/auth": { chatgpt_account_id: "test-account" },
+})).toString("base64url")}.signature`;
+
+const mockUsageRequest = (t, rateLimit = {
+  primary_window: { used_percent: 24, limit_window_seconds: 18000 },
+  secondary_window: { used_percent: 63, limit_window_seconds: 604800 },
+}) => {
+  const requests = [];
+  t.mock.method(https, "request", (url, options, callback) => {
+    requests.push({ url, headers: options.headers });
+    const req = new EventEmitter();
+    req.end = () => {
+      const res = new EventEmitter();
+      res.statusCode = 200;
+      callback(res);
+      res.emit("data", Buffer.from(JSON.stringify({ rate_limit: rateLimit })));
+      res.emit("end");
+    };
+    return req;
+  });
+  return requests;
+};
+
+test("renders account usage for openai models using only the legacy credential", async t => {
+  const requests = mockUsageRequest(t);
+  const footer = setUp(t);
+  footer.startSession("session-1", {
+    provider: "openai",
+    modelRegistry: {
+      getProviderAuth: async provider => provider === "openai-codex"
+        ? { auth: { apiKey: legacyUsageToken } }
+        : { auth: { apiKey: "direct-api-token-must-not-be-used" } },
+    },
+  });
+  await new Promise(resolve => setImmediate(resolve));
+
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].url, "https://chatgpt.com/backend-api/codex/usage");
+  assert.equal(requests[0].headers.authorization, `Bearer ${legacyUsageToken}`);
+  assert.equal(requests[0].headers["chatgpt-account-id"], "test-account");
+  assert.match(footer.render(), /5h ▰▰▱▱▱▱▱▱▱▱ 24%/);
+  assert.match(footer.render(), /7d ▰▰▰▰▰▰▱▱▱▱ 63%/);
+});
+
+test("still renders account usage for legacy openai-codex models", async t => {
+  mockUsageRequest(t);
+  const footer = setUp(t);
+  footer.startSession("session-1", {
+    provider: "openai-codex",
+    modelRegistry: { getProviderAuth: async () => ({ auth: { apiKey: legacyUsageToken } }) },
+  });
+  await new Promise(resolve => setImmediate(resolve));
+
+  assert.match(footer.render(), /7d ▰▰▰▰▰▰▱▱▱▱ 63%/);
+});
+
+test("renders a weekly-only primary usage window for openai models", async t => {
+  mockUsageRequest(t, {
+    primary_window: { used_percent: 8, limit_window_seconds: 604800 },
+    secondary_window: null,
+  });
+  const footer = setUp(t);
+  footer.startSession("session-1", {
+    provider: "openai",
+    modelRegistry: { getProviderAuth: async () => ({ auth: { apiKey: legacyUsageToken } }) },
+  });
+  await new Promise(resolve => setImmediate(resolve));
+
+  assert.match(footer.render(), / 7d ▰▱▱▱▱▱▱▱▱▱ 8%/);
+  assert.doesNotMatch(footer.render(), /5h/);
+});
+
+test("does not poll with the direct token when the legacy credential is missing", async t => {
+  const requests = mockUsageRequest(t);
+  const footer = setUp(t);
+  footer.startSession("session-1", {
+    provider: "openai",
+    modelRegistry: {
+      getProviderAuth: async provider => provider === "openai"
+        ? { auth: { apiKey: "direct-api-token-must-not-be-used" } }
+        : undefined,
+    },
+  });
+  await new Promise(resolve => setImmediate(resolve));
+
+  assert.equal(requests.length, 0);
+  assert.doesNotMatch(footer.render(), /7d|5h/);
 });
 
 test("renders incomplete child costs without a trailing plus", t => {
