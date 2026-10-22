@@ -3,7 +3,7 @@ name: interfaces-reviewer
 description: Luna/high: optional exploratory Ousterhout-style review of API depth, information hiding, module coherence, and composition. Best for substantial new modules.
 advertise: true
 tools: read, grep, find, ls, bash, contact_supervisor
-model: openai-codex/gpt-6-luna
+model: openai/gpt-6-luna
 thinking: high
 systemPromptMode: replace
 inheritProjectContext: true

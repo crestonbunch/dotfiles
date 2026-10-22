@@ -3,7 +3,7 @@ name: reviewer
 description: Luna/high: thorough exploratory review with fresh eyes; raise questions, potential issues, inconsistencies, and broad simplifications. The parent owns investigation and disposition.
 advertise: true
 tools: read, grep, find, ls, bash, contact_supervisor
-model: openai-codex/gpt-6-luna
+model: openai/gpt-6-luna
 thinking: high
 systemPromptMode: replace
 inheritProjectContext: true

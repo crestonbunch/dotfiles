@@ -3,7 +3,7 @@ name: aesthetics-reviewer
 description: Luna/high: optional exploratory Taste for Makers review of code beauty, nesting, branching, function shape, naming, and organization. Best for substantial new code.
 advertise: true
 tools: read, grep, find, ls, bash, contact_supervisor
-model: openai-codex/gpt-6-luna
+model: openai/gpt-6-luna
 thinking: high
 systemPromptMode: replace
 inheritProjectContext: true

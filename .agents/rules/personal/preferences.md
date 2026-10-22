@@ -10,7 +10,7 @@ alwaysApply: true
 
 ## Roles
 
-Provider: `openai-codex`. Defaults, not fixed limits:
+Provider: `openai`. Defaults, not fixed limits:
 
 | Agent | Model | Effort | Use |
 | --- | --- | --- | --- |
@@ -23,7 +23,7 @@ Provider: `openai-codex`. Defaults, not fixed limits:
 | `aesthetics-reviewer` | `gpt-6-luna` | high | Optional Taste for Makers review of code beauty, directness, nesting, branching, and organization |
 | `practices-reviewer` | `gpt-6-luna` | high | Optional review of immutable values, plain data, functional core/imperative shell, and decision placement |
 
-Keep Luna/high for focused reviews, narrow rechecks, and exploratory design review. Use `openai-codex/gpt-6.1-sol:high` for broad integrated behavioral reviews with consequential UI lifecycle, async ownership, identity, persistence, rollback, or schema/toolchain risk. Select one appropriate reviewer model for the task; do not routinely duplicate the review across models.
+Keep Luna/high for focused reviews, narrow rechecks, and exploratory design review. Use `openai/gpt-6.1-sol:high` for broad integrated behavioral reviews with consequential UI lifecycle, async ownership, identity, persistence, rollback, or schema/toolchain risk. Select one appropriate reviewer model for the task; do not routinely duplicate the review across models.
 
 The parent may select these design specialists at its discretion, mainly for substantial chunks of new work. Usually skip them for small changes and updates to existing features. Choose only the lens that addresses a concrete design uncertainty; do not launch all three by default or add mandatory review stages. Their proposed fixes are non-binding, not correctness verification or independent acceptance authority, and do not replace focused behavioral review when needed. The parent reconciles overlapping advice by total complexity and caller burden, not line count or paradigm purity.
 

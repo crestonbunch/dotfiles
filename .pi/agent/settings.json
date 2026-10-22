@@ -2,14 +2,14 @@
   "lastChangelogVersion": "1.1.0",
   "theme": "dark",
   "tuiMode": "fullscreen",
-  "defaultProvider": "openai-codex",
+  "defaultProvider": "openai",
   "defaultModel": "gpt-6.1-sol",
   "defaultThinkingLevel": "high",
   "defaultTools": [
     "+codemode"
   ],
   "subagents": {
-    "defaultModel": "openai-codex/gpt-6-luna",
+    "defaultModel": "openai/gpt-6-luna",
     "defaultThinking": "low",
     "agentOverrides": {
       "scout": {
@@ -47,9 +47,9 @@
       "enforce": true,
       "strict": true,
       "allow": [
-        "openai-codex/gpt-6-luna",
-        "openai-codex/gpt-6.1-sol",
-        "openai-codex/gpt-6-astra"
+        "openai/gpt-6-luna",
+        "openai/gpt-6.1-sol",
+        "openai/gpt-6-astra"
       ]
     }
   },

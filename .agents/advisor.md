@@ -3,7 +3,7 @@ name: advisor
 description: Astra/medium: make a bounded implementation-direction recommendation and surface tradeoffs; no edits or final acceptance.
 advertise: true
 tools: read, grep, find, ls, bash, contact_supervisor
-model: openai-codex/gpt-6-astra
+model: openai/gpt-6-astra
 thinking: medium
 systemPromptMode: replace
 inheritProjectContext: true
