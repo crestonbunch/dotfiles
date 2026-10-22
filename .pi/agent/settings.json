@@ -59,5 +59,6 @@
   "packages": [
     "npm:pi-subagents",
     "npm:pi-web-access"
-  ]
+  ],
+  "deviceId": "46b7ac49-3cc6-4ee2-b749-ecfcd4a0896a"
 }
