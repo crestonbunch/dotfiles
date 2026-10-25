@@ -1,7 +1,7 @@
 return {
 	"saghen/blink.cmp",
 	-- optional: provides snippets for the snippet source
-	dependencies = { "rafamadriz/friendly-snippets", "fang2hou/blink-copilot" },
+	dependencies = { "rafamadriz/friendly-snippets" },
 
 	-- use a release tag to download pre-built binaries
 	version = "1.*",
@@ -29,20 +29,13 @@ return {
 			preset = "super-tab",
 			["<Tab>"] = {
 				function(cmp)
-					-- Priority 1: If blink menu is visible, accept from blink
+					-- If blink menu is visible, accept from blink
 					if cmp.is_visible() then
 						if cmp.snippet_active() then
 							return cmp.accept()
 						else
 							return cmp.select_and_accept()
 						end
-					end
-					-- Priority 2: If copilot inline suggestion is available, apply it
-					if vim.b[vim.api.nvim_get_current_buf()].nes_state then
-						return (
-							require("copilot-lsp.nes").apply_pending_nes()
-							and require("copilot-lsp.nes").walk_cursor_end_edit()
-						)
 					end
 					-- Fallback: regular tab behavior
 					return true
@@ -98,15 +91,7 @@ return {
 		-- Default list of enabled providers defined so that you can extend it
 		-- elsewhere in your config, without redefining it, due to `opts_extend`
 		sources = {
-			default = { "lsp", "path", "snippets", "buffer", "copilot" },
-			providers = {
-				copilot = {
-					name = "copilot",
-					module = "blink-copilot",
-					score_offset = 100,
-					async = true,
-				},
-			},
+			default = { "lsp", "path", "snippets", "buffer" },
 		},
 
 		-- (Default) Rust fuzzy matcher for typo resistance and significantly better performance
