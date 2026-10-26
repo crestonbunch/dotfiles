@@ -41,8 +41,8 @@ if command -v mise >/dev/null 2>&1; then
   eval "$(mise activate zsh)"
 fi
 
-# path_helper and mise both assign the scalar PATH, which bypasses the -U flag
-# set in .zshenv; re-assigning the array applies it.
-path=($path)
+# path_helper and mise can put installed commands ahead of our local wrappers.
+# Re-prepend local/bin after activation and apply the -U deduplication flag.
+path=("$HOME/.local/bin" $path)
 
 eval "$(starship init zsh)"

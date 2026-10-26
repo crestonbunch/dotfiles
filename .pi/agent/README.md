@@ -12,8 +12,9 @@ $EDITOR ~/.pi/agent/model-choices.local.json
 ```
 
 `~/.local/bin/pi` applies the configuration before launching the next Pi
-executable on `PATH`. Keep `~/.local/bin` first on `PATH` (the dotfiles' `.zshenv`
-already does this). No npm package or Homebrew installation is modified.
+executable on `PATH`. Keep `~/.local/bin` first on `PATH`. The dotfiles' `.zshrc`
+restores this precedence after macOS login setup and mise activation. No npm
+package or Homebrew installation is modified.
 
 The launcher generates gitignored `settings.json` using these layers:
 
