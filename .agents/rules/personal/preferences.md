@@ -5,25 +5,24 @@ alwaysApply: true
 
 # Preferences
 
-- Default parent: GPT-6.1 Sol/high. The parent owns plan, contracts, integration, and acceptance within the human operator's approved scope; children advise or execute within assigned boundaries.
-- Choose Astra/low or medium autonomously when useful. Astra/high requires an explicit user prompt. Set effort explicitly; use the cheapest capable model and context.
+- The parent owns plan, contracts, integration, and acceptance within the human operator's approved scope; children advise or execute within assigned boundaries.
+- Model choices and effort for Pi are configured in `~/.pi/agent/model-defaults.json`, with per-device overrides in `~/.pi/agent/model-choices.local.json`. Inspect the live subagent mapping before launch rather than assuming a provider or model.
+- The advisor may use low or medium effort autonomously; high effort requires an explicit user prompt. Set effort explicitly; use the cheapest capable model and context.
 
 ## Roles
 
-Provider: `openai`. Defaults, not fixed limits:
+| Agent | Use |
+| --- | --- |
+| `explorer` | Bounded read-only discovery across code, MCP, and web sources |
+| `advisor` | Recommend decisions and implementation direction; parent approves |
+| `worker` | Mechanical edits, existing features, plumbing, debugging |
+| `builder` | Larger new features and novel technical designs |
+| `reviewer` | Thorough exploratory review with fresh eyes: questions, potential issues, inconsistencies, and broad alternatives |
+| `interfaces-reviewer` | Optional Ousterhout-style review of API depth, information hiding, module coherence, and composition |
+| `aesthetics-reviewer` | Optional Taste for Makers review of code beauty, directness, nesting, branching, and organization |
+| `practices-reviewer` | Optional review of immutable values, plain data, functional core/imperative shell, and decision placement |
 
-| Agent                 | Model         | Effort | Use                                                                                                               |
-| --------------------- | ------------- | ------ | ----------------------------------------------------------------------------------------------------------------- |
-| `explorer`            | `gpt-6-luna`  | high   | Bounded read-only discovery across code, MCP, and web sources                                                     |
-| `advisor`             | `gpt-6-astra` | medium | Recommend decisions and implementation direction; parent approves                                                 |
-| `worker`              | `gpt-6.1-sol` | medium | Mechanical edits, existing features, plumbing, debugging                                                          |
-| `builder`             | `gpt-6.1-sol` | high   | Larger new features and novel technical designs                                                                   |
-| `reviewer`            | `gpt-6-luna`  | high   | Thorough exploratory review with fresh eyes: questions, potential issues, inconsistencies, and broad alternatives |
-| `interfaces-reviewer` | `gpt-6-luna`  | high   | Optional Ousterhout-style review of API depth, information hiding, module coherence, and composition              |
-| `aesthetics-reviewer` | `gpt-6-luna`  | high   | Optional Taste for Makers review of code beauty, directness, nesting, branching, and organization                 |
-| `practices-reviewer`  | `gpt-6-luna`  | high   | Optional review of immutable values, plain data, functional core/imperative shell, and decision placement         |
-
-Keep Luna/high for focused reviews, narrow rechecks, and exploratory design review. Use `openai/gpt-6.1-sol:high` for broad integrated behavioral reviews with consequential UI lifecycle, async ownership, identity, persistence, rollback, or schema/toolchain risk. Select one appropriate reviewer model for the task; do not routinely duplicate the review across models.
+Keep the configured reviewer model at high effort for focused reviews, narrow rechecks, and exploratory design review. Use the configured default parent model at high effort for broad integrated behavioral reviews with consequential UI lifecycle, async ownership, identity, persistence, rollback, or schema/toolchain risk. Select one appropriate reviewer model for the task; do not routinely duplicate the review across models.
 
 The parent may select these design specialists at its discretion, mainly for substantial chunks of new work. Usually skip them for small changes and updates to existing features. Choose only the lens that addresses a concrete design uncertainty; do not launch all three by default or add mandatory review stages. Their proposed fixes are non-binding, not correctness verification or independent acceptance authority, and do not replace focused behavioral review when needed. The parent reconciles overlapping advice by total complexity and caller burden, not line count or paradigm purity.
 

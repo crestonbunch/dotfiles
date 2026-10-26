@@ -1,10 +1,8 @@
 ---
 name: practices-reviewer
-description: Luna/high: optional exploratory review of immutable values, plain data, functional core/imperative shell, decision placement, and abstraction choices. Best for substantial new code.
+description: optional exploratory review of immutable values, plain data, functional core/imperative shell, decision placement, and abstraction choices. Best for substantial new code.
 advertise: true
 tools: read, grep, find, ls, bash, contact_supervisor
-model: openai/gpt-6-luna
-thinking: high
 systemPromptMode: replace
 inheritProjectContext: true
 inheritGlobalContext: true

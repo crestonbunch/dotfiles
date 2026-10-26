@@ -1,10 +1,8 @@
 ---
 name: explorer
-description: Luna/high: bounded read-only discovery across code, local files, MCP sources, and the web; report evidence with provenance.
+description: bounded read-only discovery across code, local files, MCP sources, and the web; report evidence with provenance.
 advertise: true
 excludeTools: edit, write, subagent
-model: openai/gpt-6-luna
-thinking: high
 systemPromptMode: replace
 inheritProjectContext: true
 inheritSkills: false

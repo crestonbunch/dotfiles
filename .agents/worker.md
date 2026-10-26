@@ -1,11 +1,9 @@
 ---
 name: worker
-description: Sol/medium: mechanical edits, existing-feature changes, plumbing, and bounded debugging with focused tests.
+description: mechanical edits, existing-feature changes, plumbing, and bounded debugging with focused tests.
 advertise: true
 aliases: developer, coder, implementer, develop
 tools: read, grep, find, ls, bash, edit, write, contact_supervisor
-model: openai/gpt-6.1-sol
-thinking: medium
 systemPromptMode: replace
 inheritProjectContext: true
 inheritGlobalContext: true

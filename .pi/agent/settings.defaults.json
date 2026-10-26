@@ -1,16 +1,10 @@
 {
-  "lastChangelogVersion": "1.4.0",
   "theme": "dark",
   "tuiMode": "fullscreen",
-  "defaultProvider": "openai",
-  "defaultModel": "gpt-6.1-sol",
-  "defaultThinkingLevel": "high",
   "defaultTools": [
     "+codemode"
   ],
   "subagents": {
-    "defaultModel": "openai/gpt-6-luna",
-    "defaultThinking": "low",
     "agentOverrides": {
       "scout": {
         "disabled": true
@@ -42,15 +36,6 @@
       "cursor-agent-writer": {
         "disabled": true
       }
-    },
-    "modelScope": {
-      "enforce": true,
-      "strict": true,
-      "allow": [
-        "openai/gpt-6-luna",
-        "openai/gpt-6.1-sol",
-        "openai/gpt-6-astra"
-      ]
     }
   },
   "skills": [
@@ -59,6 +44,5 @@
   "packages": [
     "npm:pi-subagents",
     "npm:pi-web-access"
-  ],
-  "deviceId": "46b7ac49-3cc6-4ee2-b749-ecfcd4a0896a"
+  ]
 }

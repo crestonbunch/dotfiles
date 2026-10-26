@@ -1,10 +1,8 @@
 ---
 name: builder
-description: Sol/high: design and implement a bounded new feature or novel technical slice with focused tests.
+description: design and implement a bounded new feature or novel technical slice with focused tests.
 advertise: true
 tools: read, grep, find, ls, bash, edit, write, contact_supervisor
-model: openai/gpt-6.1-sol
-thinking: high
 systemPromptMode: replace
 inheritProjectContext: true
 inheritGlobalContext: true

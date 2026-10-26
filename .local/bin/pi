@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Resolve the real executable before changing settings, skipping this wrapper and symlinks to it.
+self="${BASH_SOURCE[0]}"
+IFS=: read -r -a search_path <<< "$PATH"
+real_pi=""
+for directory in "${search_path[@]}"; do
+  candidate="${directory:-.}/pi"
+  if [[ -f $candidate && -x $candidate && ! $candidate -ef $self ]]; then
+    real_pi="$candidate"
+    break
+  fi
+done
+if [[ -z $real_pi ]]; then
+  printf 'pi: no underlying Pi executable found on PATH\n' >&2
+  exit 127
+fi
+
+agent_dir="${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}"
+# Custom agent directories without these dotfiles keep native Pi behavior.
+if [[ -f $agent_dir/model-config.mjs ]]; then
+  node "$agent_dir/model-config.mjs" --apply
+fi
+exec "$real_pi" "$@"

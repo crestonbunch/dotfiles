@@ -20,7 +20,11 @@ esac
 case "$backend" in
   pi)
     configured_model="$(jj config get ai.pi-model 2> /dev/null || true)"
-    model="${model:-${configured_model:-openai/gpt-6-luna:high}}"
+    if [[ -z $model && -z $configured_model ]]; then
+      model="$(node "${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}/model-config.mjs" --model reviewer)"
+    else
+      model="${model:-$configured_model}"
+    fi
     printf '==> Drafting with Pi (%s)...\n' "$model" >&2
     args=(
       --model "$model"

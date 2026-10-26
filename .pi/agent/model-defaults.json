@@ -1,0 +1,44 @@
+{
+  "parent": {
+    "model": "openai/gpt-6.1-sol",
+    "thinking": "high"
+  },
+  "defaultSubagent": {
+    "model": "openai/gpt-6-luna",
+    "thinking": "low"
+  },
+  "agents": {
+    "explorer": {
+      "model": "openai/gpt-6-luna",
+      "thinking": "high"
+    },
+    "advisor": {
+      "model": "openai/gpt-6-astra",
+      "thinking": "medium"
+    },
+    "worker": {
+      "model": "openai/gpt-6.1-sol",
+      "thinking": "medium"
+    },
+    "builder": {
+      "model": "openai/gpt-6.1-sol",
+      "thinking": "high"
+    },
+    "reviewer": {
+      "model": "openai/gpt-6-luna",
+      "thinking": "high"
+    },
+    "interfaces-reviewer": {
+      "model": "openai/gpt-6-luna",
+      "thinking": "high"
+    },
+    "aesthetics-reviewer": {
+      "model": "openai/gpt-6-luna",
+      "thinking": "high"
+    },
+    "practices-reviewer": {
+      "model": "openai/gpt-6-luna",
+      "thinking": "high"
+    }
+  }
+}
