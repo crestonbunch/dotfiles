@@ -14,6 +14,8 @@ When creating or changing UI:
 - Establish a clear information hierarchy. Users must be able to find what is relevant quickly.
 - Design for skimming. Avoid clutter and keep related elements visually cohesive.
 - Less is more. Do not add components, controls, or decoration merely because they are available.
+- Treat horizontal rules, nesting, and boxes as potential clutter and signs of poor organization. Simplify the underlying structure before adding separators or containers.
+- Build simply from first principles: start with the user's task and the minimum structure needed to support it, using established design patterns.
 - Make the most important action obvious.
 - Keep rare and unimportant actions less prominent and out of the way.
 - Match the space to the task. Do not cram complex interactions into tight modals or stretch small features across oversized spaces.
