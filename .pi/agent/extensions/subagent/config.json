@@ -1,5 +1,6 @@
 {
   "defaultSubagentContext": "fresh",
+  "toolActivation": "dynamic",
   "asyncByDefault": true,
   "globalConcurrencyLimit": 4,
   "maxSubagentDepth": 1,
