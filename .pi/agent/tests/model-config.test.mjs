@@ -47,9 +47,9 @@ test("missing device choices generate the shared OpenAI defaults", t => {
   applyModelChoices(fixture.agentDir);
   const settings = fixture.settings();
   assert.equal(settings.defaultProvider, "openai");
-  assert.equal(settings.defaultModel, "gpt-6.1-sol");
+  assert.equal(settings.defaultModel, "gpt-6.1-terra");
   assert.equal(settings.defaultThinkingLevel, "high");
-  assert.deepEqual(settings.subagents.agentOverrides.worker, { model: "openai/gpt-6.1-sol", thinking: "medium" });
+  assert.deepEqual(settings.subagents.agentOverrides.worker, { model: "openai/gpt-6.1-terra", thinking: "medium" });
   assert.deepEqual(settings.subagents.agentOverrides.advisor, { model: "openai/gpt-6-astra", thinking: "medium" });
   assert.deepEqual(settings.subagents.agentOverrides.reviewer, { model: "openai/gpt-6-luna", thinking: "high" });
   assert.equal(settings.subagents.agentOverrides.scout.disabled, true);
@@ -74,7 +74,7 @@ test("device choices independently configure exact models and effort per role", 
   assert.deepEqual(settings.subagents.agentOverrides.worker, { model: "openai-codex/gpt-6.1-sol", thinking: "medium" });
   assert.deepEqual(settings.subagents.agentOverrides.reviewer, { model: "openai-codex/gpt-6-astra", thinking: "low" });
   assert.deepEqual(settings.enabledModels, [
-    "openai-codex/gpt-6.1-sol", "openai-codex/gpt-6-luna", "openai/gpt-6-luna", "openai/gpt-6-astra", "openai/gpt-6.1-sol", "openai-codex/gpt-6-astra",
+    "openai-codex/gpt-6.1-sol", "openai-codex/gpt-6-luna", "openai/gpt-6-luna", "openai/gpt-6-astra", "openai/gpt-6.1-terra", "openai-codex/gpt-6-astra",
   ]);
   assert.deepEqual(settings.subagents.modelScope, { enforce: true, strict: true, allow: settings.enabledModels });
 });
@@ -94,7 +94,7 @@ test("removing local choices restores defaults while preserving non-model runtim
   assert.equal(settings.theme, "light");
   assert.equal(settings.deviceId, "this-device");
   assert.deepEqual(settings.packages, ["local-package"]);
-  assert.deepEqual(settings.subagents.agentOverrides.worker, { model: "openai/gpt-6.1-sol", thinking: "medium", tools: ["read"] });
+  assert.deepEqual(settings.subagents.agentOverrides.worker, { model: "openai/gpt-6.1-terra", thinking: "medium", tools: ["read"] });
   assert.equal(settings.subagents.modelScope.agents, undefined);
 });
 

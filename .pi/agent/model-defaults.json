@@ -1,6 +1,6 @@
 {
   "parent": {
-    "model": "openai/gpt-6.1-sol",
+    "model": "openai/gpt-6.1-terra",
     "thinking": "high"
   },
   "defaultSubagent": {
@@ -17,11 +17,11 @@
       "thinking": "medium"
     },
     "worker": {
-      "model": "openai/gpt-6.1-sol",
+      "model": "openai/gpt-6.1-terra",
       "thinking": "medium"
     },
     "builder": {
-      "model": "openai/gpt-6.1-sol",
+      "model": "openai/gpt-6.1-terra",
       "thinking": "high"
     },
     "reviewer": {
