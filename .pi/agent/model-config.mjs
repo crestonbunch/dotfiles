@@ -44,29 +44,42 @@ const validateChoice = (choice, name) => {
   }
 };
 
+const assignedModels = config => [
+  config.parent,
+  config.defaultSubagent,
+  ...Object.values(config.agents),
+].map(choice => choice.model);
+
 /** Missing local choices use shared defaults; malformed choices fail before settings change. */
 export const loadModelChoices = agentDir => {
   const config = merge(
     readObject(join(agentDir, "model-defaults.json")),
     readObject(join(agentDir, "model-choices.local.json"), true),
   );
-  if (Object.keys(config).some(key => !["parent", "defaultSubagent", "agents"].includes(key))) {
-    throw new Error("Model choices support only parent, defaultSubagent, and agents");
+  if (Object.keys(config).some(key => !["parent", "defaultSubagent", "agents", "supportedModels"].includes(key))) {
+    throw new Error("Model choices support only parent, defaultSubagent, agents, and supportedModels");
   }
   validateChoice(config.parent, "parent");
   validateChoice(config.defaultSubagent, "defaultSubagent");
   if (!isObject(config.agents)) throw new Error("agents must be an object of role choices");
   for (const [name, choice] of Object.entries(config.agents)) validateChoice(choice, `agents.${name}`);
+  if (config.supportedModels !== undefined) {
+    if (!Array.isArray(config.supportedModels) || config.supportedModels.length === 0 ||
+        config.supportedModels.some(model => typeof model !== "string" || model.includes("*") || !/^[^/\s]+\/\S+$/.test(model))) {
+      throw new Error("supportedModels must be a non-empty array of exact provider/model IDs");
+    }
+    const supported = new Set(config.supportedModels);
+    const missing = [...new Set(assignedModels(config))].filter(model => !supported.has(model));
+    if (missing.length > 0) {
+      throw new Error(`supportedModels must include configured models: ${missing.join(", ")}`);
+    }
+  }
   return config;
 };
 
 const modelSettings = config => {
   const separator = config.parent.model.indexOf("/");
-  const supported = [...new Set([
-    config.parent.model,
-    config.defaultSubagent.model,
-    ...Object.values(config.agents).map(choice => choice.model),
-  ])];
+  const supported = [...new Set(config.supportedModels ?? assignedModels(config))];
   return {
     defaultProvider: config.parent.model.slice(0, separator),
     defaultModel: config.parent.model.slice(separator + 1),

@@ -79,6 +79,43 @@ test("device choices independently configure exact models and effort per role", 
   assert.deepEqual(settings.subagents.modelScope, { enforce: true, strict: true, allow: settings.enabledModels });
 });
 
+test("explicit device scopes allow additional models without changing role assignments", t => {
+  const fixture = setUp(t);
+  const supportedModels = [
+    "openai/gpt-6.1-terra",
+    "openai/gpt-6-luna",
+    "openai/gpt-6-astra",
+    "amazon-bedrock/us.anthropic.claude-fable-5-1",
+  ];
+  fixture.local({ supportedModels });
+  applyModelChoices(fixture.agentDir);
+  const settings = fixture.settings();
+  assert.equal(settings.defaultProvider, "openai");
+  assert.equal(settings.defaultModel, "gpt-6.1-terra");
+  assert.deepEqual(settings.enabledModels, supportedModels);
+  assert.deepEqual(settings.subagents.modelScope, { enforce: true, strict: true, allow: supportedModels });
+});
+
+test("explicit scopes cannot omit a configured role model", t => {
+  const fixture = setUp(t);
+  writeFileSync(join(fixture.agentDir, "settings.json"), '{"theme":"light"}');
+  fixture.local({ supportedModels: ["openai/gpt-6.1-terra", "openai/gpt-6-astra"] });
+  assert.throws(() => applyModelChoices(fixture.agentDir), /supportedModels must include configured models: openai\/gpt-6-luna/);
+  assert.equal(readFileSync(join(fixture.agentDir, "settings.json"), "utf8"), '{"theme":"light"}');
+});
+
+test("explicit scopes reject unqualified model IDs", t => {
+  const fixture = setUp(t);
+  fixture.local({ supportedModels: ["gpt-6.1-sol"] });
+  assert.throws(() => loadModelChoices(fixture.agentDir), /supportedModels must be a non-empty array of exact provider\/model IDs/);
+});
+
+test("explicit scopes reject wildcard model patterns", t => {
+  const fixture = setUp(t);
+  fixture.local({ supportedModels: ["amazon-bedrock/us.*"] });
+  assert.throws(() => loadModelChoices(fixture.agentDir), /supportedModels must be a non-empty array of exact provider\/model IDs/);
+});
+
 test("removing local choices restores defaults while preserving non-model runtime settings", t => {
   const fixture = setUp(t);
   writeFileSync(join(fixture.agentDir, "settings.json"), JSON.stringify({
@@ -123,7 +160,7 @@ test("unqualified model IDs are rejected instead of matching another provider", 
 test("unknown config keys are rejected instead of silently ignoring device choices", t => {
   const fixture = setUp(t);
   fixture.local({ provider: "openai-codex" });
-  assert.throws(() => loadModelChoices(fixture.agentDir), /support only parent, defaultSubagent, and agents/);
+  assert.throws(() => loadModelChoices(fixture.agentDir), /support only parent, defaultSubagent, agents, and supportedModels/);
 });
 
 test("invalid thinking levels fail before settings change", t => {

@@ -25,8 +25,13 @@ The launcher generates gitignored `settings.json` using these layers:
 3. Resolved model choices: owns startup model/effort, model cycling, subagent
    fallback and role assignments, and the strict supported-model allowlist.
 
-The supported set is derived from all configured assignments, including the
-parent. Role definitions contain behavior and tools, not hardcoded models.
+By default, the supported set is derived from all configured assignments,
+including the parent. To allow additional models on one device, add a
+`supportedModels` array of exact `provider/model` IDs to
+`model-choices.local.json`. This list replaces the derived set and must include
+every configured role model. It controls both model cycling and the strict
+subagent allowlist. Role definitions contain behavior and tools, not hardcoded
+models.
 `jj-ai-run` uses the configured reviewer model unless its existing environment
 or jj config overrides select another model.
 
