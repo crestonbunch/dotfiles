@@ -4,7 +4,7 @@ Before starting work, evaluate relevant prior art in the repository: existing UI
 
 If the repository has no relevant precedent, consider standard patterns and conventions for the platform and problem. Do not make blind design decisions or treat missing prior art as permission to invent arbitrary conventions.
 
-Interpret the operator's intended outcome, not just the concrete ask. Investigate discoverable facts first. If intent or the appropriate approach remains uncertain, ask the operator rather than choosing an assumption that could deliver the wrong result. Children bring such uncertainty to their supervisor.
+Interpret the operator's intended outcome, not just the concrete ask. Investigate discoverable facts needed to choose or verify the requested approach. Stop discovery when further findings would not materially change that choice or its acceptance; report remaining limitations rather than pursuing completeness. If intent or the appropriate approach remains uncertain, ask the operator rather than choosing an assumption that could deliver the wrong result. Children bring such uncertainty to their supervisor.
 
 ## Subagent routing
 

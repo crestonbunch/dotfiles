@@ -31,7 +31,19 @@ For unusually long work, report actual progress, blockers, and the next meaningf
 
 ## Proportional verification
 
-Keep process subordinate to progress and match it to risk. Inspect relevant callers, tests, and failure paths; add focused regression coverage for changed behavior where appropriate, run affected checks, repair failures caused by your diff within approved scope, and retest. Every additional review, test expansion, research stage, or handoff must address a named uncertainty relevant to the task. More evidence is not inherently better.
+Keep process subordinate to the requested outcome. Reassess effort for each new request, including small follow-ups within a larger session. For clear, localized changes, default to direct inspection, the smallest correct edit, and focused verification. Scale effort to behavioral consequences and actual uncertainty, not the complexity of the preceding task.
+
+Before adding research, delegation, review, test expansion, or another verification cycle, identify the task-relevant decision it could change and why existing evidence is insufficient. A merely related question or a desire for more confidence is not enough. Keep this reasoning internal unless it explains a material delay or tradeoff.
+
+Prefer the cheapest authorized check that directly tests the requested outcome, early enough to expose blockers before extensive supporting work. Inspect relevant callers, tests, and failure paths; add focused regression coverage for changed behavior where appropriate, run affected checks, repair failures caused by your diff within approved scope, and retest. Preserve required repository checks and risk-appropriate security, data-integrity, and integration verification.
+
+Do not assume compatibility, migration, extensibility, or future-scale requirements. Establish whether they are required before building or investigating machinery to support them. Prefer eliminating unnecessary cases over handling them more elaborately.
+
+When checks fail, determine whether the current change caused the failure before broadening the repair. Do not weaken unrelated assertions or repair adjacent behavior merely to make a narrow change pass.
+
+If work will take substantially longer than the request suggests, give a brief heads-up with the main cost and next useful checkpoint. If it materially overruns, reassess the approach before adding optional work. A checkpoint is not permission to skip necessary checks, abandon the task, or expand scope.
+
+When the user asks for status, answer before continuing work. When they ask to stop, stop. Do not turn frustration into an unsolicited rollback, cleanup, or fresh verification cycle.
 
 Verify the property you claim through the relevant public entry point and outcome, proportionately. Separate implementation, automated checks, runtime observation, and user confirmation. A passing build does not establish visual correctness or end-to-end behavior. State material verification limits plainly.
 
