@@ -10,6 +10,8 @@ local common_commands = require("neo-tree.sources.common.commands")
 local events = require("neo-tree.events")
 local highlights = require("neo-tree.ui.highlights")
 local log = require("neo-tree.log")
+local ignored_dirs = require("config.neo_tree_ignored_dirs")
+local home = vim.env.HOME:gsub("/+$", "")
 
 local M = {
   name = "jj_changed",
@@ -41,7 +43,7 @@ local function workspace_root()
   if dir == "" or vim.fn.isdirectory(dir) == 0 then
     dir = vim.fn.getcwd()
   end
-  local out = run({ "jj", "workspace", "root" }, dir)
+  local out = run({ "jj", "--ignore-working-copy", "workspace", "root" }, dir)
   if not out then
     return nil
   end
@@ -75,7 +77,7 @@ local function changed_files(root)
   return changes
 end
 
-local fs_watcher
+local fs_watcher, watched_root
 local refresh_timer = vim.uv.new_timer()
 
 local function window_open()
@@ -89,12 +91,27 @@ local function stop_watch()
     pcall(fs_watcher.close, fs_watcher)
     fs_watcher = nil
   end
+  watched_root = nil
+end
+
+-- Ignore background work beneath home, not an actively opened workspace there.
+local function ignored_home_path(root, path)
+  if root ~= home then
+    return false
+  end
+  for _, directory in ipairs(ignored_dirs) do
+    local prefix = home .. "/" .. directory
+    if path == prefix or path:sub(1, #prefix + 1) == prefix .. "/" then
+      return true
+    end
+  end
+  return false
 end
 
 -- jj snapshots the working copy on every read, including the `jj diff` our own
 -- refresh runs, and that snapshot writes under .jj/. Refreshing on those events
 -- would loop forever, so ignore VCS-internal paths (and nil names, which we
--- can't classify — the save/focus subscriptions still cover those).
+-- can't classify; the save/file-op subscriptions still cover those).
 local function vcs_internal(name)
   if not name then
     return true
@@ -122,24 +139,24 @@ local function schedule_refresh()
   )
 end
 
--- Watch the workspace root so external edits and jj operations (from a terminal,
--- another editor) refresh an open pane, not just in-nvim saves. Recursive is
--- macOS/Windows-only in libuv; on Linux it degrades to the top level, with the
--- event subscriptions in M.setup still covering the rest.
+-- Watch external edits, but do not re-diff home for noisy-directory events.
 local function start_watch(root)
-  if fs_watcher or not root then
+  if not root or (fs_watcher and watched_root == root) then
     return
   end
+  stop_watch()
+  watched_root = root
   local w = vim.uv.new_fs_event()
   if not w then
     return
   end
   local on_event = function(err, name)
-    if not err and not vcs_internal(name) then
+    if not err and not vcs_internal(name) and not ignored_home_path(root, root .. "/" .. name) then
       schedule_refresh()
     end
   end
-  if pcall(w.start, w, root, { recursive = true }, on_event) then
+  local ok, started = pcall(w.start, w, root, { recursive = true }, on_event)
+  if ok and started then
     fs_watcher = w
   else
     pcall(w.close, w)
@@ -267,7 +284,25 @@ M.setup = function()
     events.FILE_MOVED,
     events.FILE_RENAMED,
   }) do
-    events.subscribe({ event = event, id = "jj_changed." .. event, handler = schedule_refresh })
+    events.subscribe({
+      event = event,
+      id = "jj_changed." .. event,
+      handler = function(args)
+        local path = type(args) == "string" and args or args and (args.afile or args.source)
+        local destination = type(args) == "table" and args.destination
+        if path then
+          path = vim.fn.fnamemodify(path, ":p"):gsub("/+$", "")
+        end
+        if destination then
+          destination = vim.fn.fnamemodify(destination, ":p"):gsub("/+$", "")
+        end
+        if path and ignored_home_path(watched_root, path)
+          and (not destination or ignored_home_path(watched_root, destination)) then
+          return
+        end
+        schedule_refresh()
+      end,
+    })
   end
 end
 

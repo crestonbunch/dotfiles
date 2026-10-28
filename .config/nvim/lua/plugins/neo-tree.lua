@@ -15,6 +15,7 @@ return {
 		},
 		opts = {
 			sources = { "filesystem", "buffers", "git_status", "neotree_sources.jj_changed" },
+			git_status_scope_to_path = true,
 			-- Confirm/rename/create via the cmdline instead of a float. The float
 			-- keeps focus in the tree, so its y/n prompt's <CR> hit the tree's
 			-- "open" mapping instead of the prompt; the cmdline can't be hijacked.
@@ -28,6 +29,8 @@ return {
 				filtered_items = {
 					-- $HOME is mostly dotfiles; hiding them leaves the tree empty.
 					hide_dotfiles = false,
+					-- Native exclusions also suppress filesystem refresh events.
+					never_show = require("config.neo_tree_ignored_dirs"),
 				},
 			},
 			window = {
